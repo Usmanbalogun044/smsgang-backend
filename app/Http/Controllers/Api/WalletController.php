@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Services\WalletService;
 use App\Services\LendoverifyService;
+use App\Services\TelegramNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -16,6 +17,7 @@ class WalletController extends Controller
     public function __construct(
         private WalletService $walletService,
         private LendoverifyService $lendoverify,
+        private TelegramNotificationService $telegramService,
     ) {}
 
     /**
@@ -123,6 +125,13 @@ class WalletController extends Controller
 
             // Add funds to wallet
             $this->walletService->addFunds($user, $amount, $reference);
+
+            $this->telegramService->sendTransactionNotification(
+                $user,
+                $amount,
+                'credit',
+                "Wallet funding successful - {$reference}"
+            );
 
             $newBalance = $this->walletService->getBalance($user);
 

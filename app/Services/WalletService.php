@@ -5,14 +5,21 @@ namespace App\Services;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Models\Transaction;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class WalletService
 {
+    private ?bool $operationTypeColumnExists = null;
+
     private function hasOperationTypeColumn(): bool
     {
-        return Schema::hasColumn('transactions', 'operation_type');
+        if ($this->operationTypeColumnExists === null) {
+            $this->operationTypeColumnExists = Schema::hasColumn('transactions', 'operation_type');
+        }
+
+        return $this->operationTypeColumnExists;
     }
 
     /**
@@ -24,6 +31,16 @@ class WalletService
             ['user_id' => $user->id],
             ['balance' => 0]
         );
+    }
+
+    private function getLockedWallet(User $user): Wallet
+    {
+        $this->getOrCreateWallet($user);
+
+        return Wallet::query()
+            ->where('user_id', $user->id)
+            ->lockForUpdate()
+            ->firstOrFail();
     }
 
     /**
@@ -49,7 +66,7 @@ class WalletService
                 return $existing;
             }
 
-            $wallet = $this->getOrCreateWallet($user);
+            $wallet = $this->getLockedWallet($user);
 
             $payload = [
                 'user_id' => $user->id,
@@ -65,9 +82,17 @@ class WalletService
                 $payload['operation_type'] = 'wallet_fund';
             }
 
-            $transaction = Transaction::create($payload);
+            try {
+                $transaction = Transaction::create($payload);
+            } catch (QueryException $e) {
+                $duplicateRef = ($e->errorInfo[1] ?? null) === 1062;
+                if ($duplicateRef) {
+                    return Transaction::where('reference', $reference)->firstOrFail();
+                }
+                throw $e;
+            }
 
-            $wallet->addBalance($amount);
+            $wallet->increment('balance', $amount);
 
             return $transaction;
         });
@@ -78,30 +103,45 @@ class WalletService
      */
     public function deductFunds(User $user, float $amount, string $reference, string $description): ?Transaction
     {
-        $wallet = $this->getOrCreateWallet($user);
+        return DB::transaction(function () use ($user, $amount, $reference, $description) {
+            $existing = Transaction::where('reference', $reference)->first();
+            if ($existing) {
+                return $existing;
+            }
 
-        if ($wallet->balance < $amount) {
-            return null; // Insufficient balance
-        }
+            $wallet = $this->getLockedWallet($user);
 
-        $payload = [
-            'user_id' => $user->id,
-            'amount' => $amount,
-            'type' => 'debit',
-            'status' => 'paid',
-            'reference' => $reference,
-            'description' => $description,
-        ];
+            if ((float) $wallet->balance < $amount) {
+                return null; // Insufficient balance
+            }
 
-        if ($this->hasOperationTypeColumn()) {
-            $payload['operation_type'] = 'wallet_debit';
-        }
+            $payload = [
+                'user_id' => $user->id,
+                'amount' => $amount,
+                'type' => 'debit',
+                'status' => 'paid',
+                'reference' => $reference,
+                'description' => $description,
+            ];
 
-        $transaction = Transaction::create($payload);
+            if ($this->hasOperationTypeColumn()) {
+                $payload['operation_type'] = 'wallet_debit';
+            }
 
-        $wallet->deductBalance($amount);
+            try {
+                $transaction = Transaction::create($payload);
+            } catch (QueryException $e) {
+                $duplicateRef = ($e->errorInfo[1] ?? null) === 1062;
+                if ($duplicateRef) {
+                    return Transaction::where('reference', $reference)->firstOrFail();
+                }
+                throw $e;
+            }
 
-        return $transaction;
+            $wallet->decrement('balance', $amount);
+
+            return $transaction;
+        });
     }
 
     /**
@@ -110,7 +150,12 @@ class WalletService
     public function refundFunds(User $user, float $amount, string $reference, string $description): Transaction
     {
         return DB::transaction(function () use ($user, $amount, $reference, $description) {
-            $wallet = $this->getOrCreateWallet($user);
+            $existing = Transaction::where('reference', $reference)->first();
+            if ($existing) {
+                return $existing;
+            }
+
+            $wallet = $this->getLockedWallet($user);
 
             $payload = [
                 'user_id' => $user->id,
@@ -125,9 +170,17 @@ class WalletService
                 $payload['operation_type'] = 'wallet_refund';
             }
 
-            $transaction = Transaction::create($payload);
+            try {
+                $transaction = Transaction::create($payload);
+            } catch (QueryException $e) {
+                $duplicateRef = ($e->errorInfo[1] ?? null) === 1062;
+                if ($duplicateRef) {
+                    return Transaction::where('reference', $reference)->firstOrFail();
+                }
+                throw $e;
+            }
 
-            $wallet->addBalance($amount);
+            $wallet->increment('balance', $amount);
 
             return $transaction;
         });

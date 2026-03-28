@@ -14,6 +14,9 @@ use App\Models\Service;
 use App\Models\Transaction;
 use App\Services\ActivationService;
 use App\Services\LendoverifyService;
+use App\Services\TelegramNotificationService;
+use App\Services\WalletService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -26,14 +29,32 @@ class ActivationController extends Controller
     public function __construct(
         private ActivationService $activationService,
         private LendoverifyService $lendoverify,
+        private TelegramNotificationService $telegramService,
+        private WalletService $walletService,
     ) {}
 
     public function buy(BuyActivationRequest $request): JsonResponse
     {
+        $user = $request->user();
+        $lockKey = sprintf(
+            'lock:sms-buy:%d:%d:%d:%s',
+            $user->id,
+            (int) $request->service_id,
+            (int) $request->country_id,
+            (string) $request->input('operator', 'any')
+        );
+        $lock = Cache::lock($lockKey, 10);
+
+        if (! $lock->get()) {
+            return response()->json([
+                'message' => 'Your previous order is still being processed. Please wait a few seconds and try again.',
+                'error' => 'request_in_progress',
+            ], 429);
+        }
+
         try {
             $service = Service::findOrFail($request->service_id);
             $country = Country::findOrFail($request->country_id);
-            $user = $request->user();
             $price = (float) $service->price;
 
             // Get or create user's wallet
@@ -61,20 +82,24 @@ class ActivationController extends Controller
                 (string) $request->input('operator'),
             );
 
-            // Deduct from wallet
-            $wallet->deductBalance($price);
+            $debitTx = $this->walletService->deductFunds(
+                $user,
+                $price,
+                "order_{$order->id}",
+                "SMS activation for {$service->name} ({$country->name})"
+            );
 
-            // Create transaction record
-            Transaction::create([
-                'user_id' => $user->id,
-                'order_id' => $order->id,
-                'amount' => $price,
-                'type' => 'debit',
-                'operation_type' => 'wallet_debit',
-                'status' => 'paid',
-                'reference' => "order_{$order->id}",
-                'description' => "SMS activation for {$service->name} ({$country->name})",
-            ]);
+            if (!$debitTx) {
+                // Balance could be consumed by a concurrent request after initial check.
+                $order->update(['status' => OrderStatus::Failed]);
+
+                return response()->json([
+                    'message' => 'Insufficient wallet balance.',
+                    'error' => 'insufficient_balance',
+                ], 422);
+            }
+
+            $remainingBalance = $this->walletService->getBalance($user);
 
             Log::channel('activity')->info('SMS activation purchased via wallet', [
                 'user_id' => $user->id,
@@ -82,13 +107,20 @@ class ActivationController extends Controller
                 'service' => $service->name,
                 'country' => $country->name,
                 'price' => $price,
-                'remaining_balance' => $wallet->fresh()->balance,
+                'remaining_balance' => $remainingBalance,
             ]);
+
+            $this->telegramService->sendTransactionNotification(
+                $user,
+                $price,
+                'debit',
+                "SMS order #{$order->id} - {$service->name} ({$country->name})"
+            );
 
             return response()->json([
                 'message' => 'Order created. Activation in progress.',
                 'order' => new OrderResource($order->load(['service', 'country', 'activation'])),
-                'remaining_balance' => $wallet->fresh()->balance,
+                'remaining_balance' => $remainingBalance,
             ], 201);
         } catch (Throwable $e) {
             Log::error('Activation purchase error', [
@@ -101,6 +133,8 @@ class ActivationController extends Controller
                 'message' => $e->getMessage() ?: 'Failed to process your request. Please try again.',
                 'error' => 'purchase_failed',
             ], 422);
+        } finally {
+            optional($lock)->release();
         }
     }
 
@@ -200,6 +234,13 @@ class ActivationController extends Controller
             'activation_id' => $activation->id,
             'user_id' => $request->user()->id,
         ]);
+
+        $this->telegramService->sendTransactionNotification(
+            $request->user(),
+            (float) $order->price,
+            'debit',
+            "Payment verified for SMS order #{$order->id}"
+        );
 
         return response()->json([
             'message' => 'Payment verified. Number assigned.',
@@ -342,6 +383,13 @@ class ActivationController extends Controller
                 'activation_id' => $activation->id,
                 'user_id'       => $request->user()->id,
             ]);
+
+            $this->telegramService->sendTransactionNotification(
+                $request->user(),
+                (float) $order->price,
+                'debit',
+                "Payment verified for SMS order #{$order->id}"
+            );
 
             return response()->json([
                 'message'    => 'Payment verified. Number assigned.',

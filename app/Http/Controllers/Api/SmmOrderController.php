@@ -12,6 +12,7 @@ use App\Services\TelegramNotificationService;
 use App\Services\WalletService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -85,6 +86,23 @@ class SmmOrderController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $user = $request->user();
+        $lockKey = sprintf(
+            'lock:smm-order:%d:%d:%s:%d',
+            $user->id,
+            (int) $request->input('smm_service_id', 0),
+            sha1((string) $request->input('link', '')),
+            (int) $request->input('quantity', 0),
+        );
+        $lock = Cache::lock($lockKey, 10);
+
+        if (! $lock->get()) {
+            return response()->json([
+                'message' => 'Your previous SMM order is still being processed. Please wait a few seconds and try again.',
+                'error' => 'request_in_progress',
+            ], 429);
+        }
+
         try {
             $validated = $request->validate([
                 'smm_service_id' => ['required', 'exists:smm_services,id'],
@@ -95,7 +113,6 @@ class SmmOrderController extends Controller
                 'comments' => ['nullable', 'string'],
             ]);
 
-            $user = $request->user();
             $service = SmmService::findOrFail($validated['smm_service_id']);
 
             // Validate quantity is within service limits
@@ -149,11 +166,30 @@ class SmmOrderController extends Controller
             ]);
 
             // STEP 2: Deduct from wallet (lock funds locally)
-            $this->walletService->deductFunds(
+            $debitTx = $this->walletService->deductFunds(
                 $user,
                 $priceData['total_price'],
                 "smm_order_{$order->id}",
                 "SMM service purchase - {$service->name}"
+            );
+
+            if (!$debitTx) {
+                $order->update([
+                    'status' => SmmOrderStatus::Failed->value,
+                    'provider_payload' => ['reason' => 'insufficient_balance_after_concurrency_check'],
+                ]);
+
+                return response()->json([
+                    'message' => 'Insufficient wallet balance.',
+                    'error' => 'insufficient_balance',
+                ], 422);
+            }
+
+            $this->telegramService->sendTransactionNotification(
+                $user,
+                (float) $priceData['total_price'],
+                'debit',
+                "SMM order #{$order->id} - {$service->name}"
             );
 
             // STEP 3: Call CrestPanel (now we have a local record + deduction)
@@ -183,6 +219,13 @@ class SmmOrderController extends Controller
                     $finalPriceNgn,
                     "smm_order_{$order->id}_refund",
                     "Refund: SMM order failed at provider - Order #{$order->id}"
+                );
+
+                $this->telegramService->sendTransactionNotification(
+                    $user,
+                    (float) $finalPriceNgn,
+                    'credit',
+                    "Refund for failed SMM order #{$order->id}"
                 );
 
                 // Update order with failed status
@@ -241,6 +284,8 @@ class SmmOrderController extends Controller
                 'message' => 'Failed to create order.',
                 'error' => 'order_failed',
             ], 422);
+        } finally {
+            optional($lock)->release();
         }
     }
 

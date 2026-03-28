@@ -73,25 +73,9 @@ return [
             'replace_placeholders' => true,
         ],
 
-        'payments' => [
-            'driver' => 'daily',
-            'path' => storage_path('logs/payments.log'),
-            'level' => 'info',
-            'days' => 30,
-            'replace_placeholders' => true,
-        ],
-
-        'telegram' => [
-            'driver' => 'custom',
-            'via' => \App\Logging\TelegramLogger::class,
-            'token' => env('TELEGRAM_BOT_TOKEN'),
-            'chat_id' => env('TELEGRAM_CHAT_ID'),
-            'level' => env('LOG_LEVEL', 'debug'),
-        ],
-
         'activity' => [
             'driver' => 'stack',
-            'channels' => ['payments', 'telegram'],
+            'channels' => explode(',', (string) env('LOG_STACK', 'single')),
             'ignore_exceptions' => true,
         ],
 

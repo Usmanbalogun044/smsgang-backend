@@ -25,7 +25,6 @@ class TelegramNotificationService
     public function sendOrderNotification($order, $user): bool
     {
         if (!$this->enabled || !$this->botToken || !$this->chatId) {
-            Log::warning('Telegram notifications disabled or not configured');
             return false;
         }
 

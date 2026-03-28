@@ -38,7 +38,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
-          context: ./backend
+          context: .
           push: true
           tags: |
             ${{ secrets.DOCKER_REGISTRY }}/smsgang-backend:latest
@@ -57,10 +57,9 @@ jobs:
           echo "$PRIVATE_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
-          cd backend
           bash deploy.sh
 
       - name: Health Check
         run: |
           sleep 10
-          curl -f http://${{ secrets.VPS_HOST }}/health || exit 1
+          curl -f http://${{ secrets.VPS_HOST }}/api/health || exit 1

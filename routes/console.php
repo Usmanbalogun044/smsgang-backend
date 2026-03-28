@@ -26,9 +26,6 @@ Schedule::job(new SyncAllPricingJob())
     ->name('sync-pricing')
     ->hourlyAt(5)
     ->withoutOverlapping(10)
-    ->onSuccess(function () {
-        Log::channel('activity')->info('✅ Pricing sync completed');
-    })
     ->onFailure(function () {
         Log::channel('activity')->error('❌ Pricing sync failed');
     });
@@ -38,9 +35,6 @@ Schedule::job(new CheckAllActiveSmsJob())
     ->name('check-sms')
     ->everyThirtySeconds()
     ->withoutOverlapping(5)
-    ->onSuccess(function () {
-        Log::channel('activity')->info('✅ SMS check completed');
-    })
     ->onFailure(function () {
         Log::channel('activity')->error('❌ SMS check failed');
     });
@@ -50,9 +44,6 @@ Schedule::job(new ExpireActivationsJob())
     ->name('expire-activations')
     ->everyThirtyMinutes()
     ->withoutOverlapping(15)
-    ->onSuccess(function () {
-        Log::channel('activity')->info('✅ Activation expiry check completed');
-    })
     ->onFailure(function () {
         Log::channel('activity')->error('❌ Activation expiry check failed');
     });
@@ -62,9 +53,6 @@ Schedule::job(new SyncSmmServicesJob())
     ->name('sync-smm-services')
     ->hourlyAt(10)
     ->withoutOverlapping(20)
-    ->onSuccess(function () {
-        Log::channel('activity')->info('✅ SMM services sync completed');
-    })
     ->onFailure(function () {
         Log::channel('activity')->error('❌ SMM services sync failed');
     });
@@ -74,9 +62,6 @@ Schedule::job(new CheckSmmOrderStatusJob())
     ->name('check-smm-orders')
     ->everyThirtySeconds()
     ->withoutOverlapping(10)
-    ->onSuccess(function () {
-        Log::channel('activity')->info('✅ SMM order status check completed');
-    })
     ->onFailure(function () {
         Log::channel('activity')->error('❌ SMM order status check failed');
     });
