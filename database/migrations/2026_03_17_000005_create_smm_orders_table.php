@@ -26,7 +26,7 @@ return new class extends Migration
             $table->string('markup_type_used');
             $table->decimal('markup_value_used', 12, 4);
             $table->json('provider_payload')->nullable();
-            $table->enum('status', ['Pending', 'In progress', 'Partial', 'Completed', 'Failed', 'Cancelled'])->default('Pending');
+            $table->string('status', 40)->default('Pending');
             $table->timestamps();
 
             $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');

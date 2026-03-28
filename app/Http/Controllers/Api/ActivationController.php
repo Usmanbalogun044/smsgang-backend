@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\BuyActivationRequest;
 use App\Http\Resources\ActivationResource;
@@ -107,7 +108,7 @@ class ActivationController extends Controller
     {
         $this->authorize('view', $order);
 
-        if ($order->status->value !== 'pending') {
+        if ($order->status->value !== OrderStatus::Pending->value) {
             return response()->json([
                 'message' => 'Order is not awaiting payment.',
                 'order' => new OrderResource($order->load(['service', 'country', 'activation'])),
@@ -127,7 +128,7 @@ class ActivationController extends Controller
 
         if (in_array($paymentStatus, $failedStatuses, true)) {
             $this->logTransaction($order, $data, 'failed', $request);
-            $order->update(['status' => 'failed']);
+            $order->update(['status' => OrderStatus::Failed]);
 
             return response()->json([
                 'message' => 'Payment failed.',
@@ -157,7 +158,7 @@ class ActivationController extends Controller
             ], 422);
         }
 
-        $order->update(['status' => 'paid']);
+        $order->update(['status' => OrderStatus::Paid]);
 
         try {
             $activation = $this->activationService->processAfterPayment($order);
@@ -259,8 +260,8 @@ class ActivationController extends Controller
 
             if (in_array($paymentStatus, $failedStatuses, true)) {
                 $this->logTransaction($order, $data, 'failed', $request);
-                if ($order->status->value === 'pending') {
-                    $order->update(['status' => 'failed']);
+                if ($order->status->value === OrderStatus::Pending->value) {
+                    $order->update(['status' => OrderStatus::Failed]);
                 }
 
                 return response()->json([
@@ -289,7 +290,7 @@ class ActivationController extends Controller
 
             // Guard: order already moved past 'pending' — do NOT provision again.
             // This stops a reload-based exploit from spawning multiple activations on one payment.
-            if ($order->status->value !== 'pending') {
+            if ($order->status->value !== OrderStatus::Pending->value) {
                 return response()->json([
                     'message'  => 'Payment received, but order is currently being processed. Please contact support if this persists.',
                     'code'     => 'ORDER_ALREADY_PROCESSED',
@@ -301,7 +302,7 @@ class ActivationController extends Controller
             // Log the confirmed transaction.
             $this->logTransaction($order, $data, 'paid', $request);
 
-            $order->update(['status' => 'paid']);
+            $order->update(['status' => OrderStatus::Paid]);
 
             try {
                 $activation = $this->activationService->processAfterPayment($order);

@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\OrderStatus;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -20,7 +21,7 @@ class OrderResource extends JsonResource
             'status' => $this->status->value,
             'payment_reference' => $this->payment_reference,
             'checkout_url' => $this->when(
-                $this->status->value === 'pending',
+                $this->status->value === OrderStatus::Pending->value,
                 $this->lendoverify_checkout_url
             ),
             'activation' => new ActivationResource($this->whenLoaded('activation')),

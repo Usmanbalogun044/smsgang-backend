@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\SmmOrderStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -39,6 +40,7 @@ class SmmOrder extends Model
             'exchange_rate_used' => 'decimal:4',
             'markup_value_used' => 'decimal:4',
             'provider_payload' => 'array',
+            'status' => SmmOrderStatus::class,
         ];
     }
 

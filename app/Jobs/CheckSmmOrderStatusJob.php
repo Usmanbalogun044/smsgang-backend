@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Enums\SmmOrderStatus;
 use App\Models\SmmOrder;
 use App\Services\CrestPanelService;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -23,7 +24,7 @@ class CheckSmmOrderStatusJob implements ShouldQueue
             $crestPanelService = new CrestPanelService();
 
             // Get all orders that are not yet completed
-            $pendingStatuses = ['Pending', 'In progress', 'Partial'];
+            $pendingStatuses = SmmOrderStatus::providerTracked();
             $orders = SmmOrder::whereIn('status', $pendingStatuses)
                 ->get();
 
@@ -43,9 +44,12 @@ class CheckSmmOrderStatusJob implements ShouldQueue
                         continue;
                     }
 
+                    $providerStatus = $statusData['status'] ?? null;
+                    $nextStatus = SmmOrderStatus::tryFrom((string) $providerStatus)?->value ?? $order->status;
+
                     // Update order with latest status
                     $order->update([
-                        'status' => $statusData['status'] ?? $order->status,
+                        'status' => $nextStatus,
                         'charge_ngn' => isset($statusData['charge']) 
                             ? (float) $statusData['charge'] 
                             : $order->charge_ngn,
@@ -56,11 +60,11 @@ class CheckSmmOrderStatusJob implements ShouldQueue
                     $successCount++;
 
                     // Log if order is completed
-                    if (in_array($statusData['status'] ?? null, ['Completed', 'Cancelled', 'Failed'])) {
+                    if (in_array($nextStatus, SmmOrderStatus::terminal(), true)) {
                         Log::channel('activity')->info('SMM order status changed', [
                             'order_id' => $order->id,
                             'crestpanel_order_id' => $order->crestpanel_order_id,
-                            'status' => $statusData['status'],
+                            'status' => $nextStatus,
                         ]);
                     }
                 } catch (\Exception $e) {

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\SmmOrderStatus;
 use App\Http\Controllers\Controller;
 use App\Models\SmmOrder;
 use App\Models\SmmService;
@@ -88,7 +89,7 @@ class SmmOrderController extends Controller
                 'markup_type_used' => $markupTypeUsed,
                 'markup_value_used' => $markupValueUsed,
                 'provider_payload' => null,  // Will be updated after CrestPanel response
-                'status' => 'pending_provider_confirmation',
+                'status' => SmmOrderStatus::PendingProviderConfirmation->value,
             ]);
 
             // STEP 2: Deduct from wallet (lock funds locally)
@@ -122,7 +123,7 @@ class SmmOrderController extends Controller
 
                 // Update order with failed status (but keep it in database with funds deducted)
                 $order->update([
-                    'status' => 'failed_at_provider',
+                    'status' => SmmOrderStatus::FailedAtProvider->value,
                     'provider_payload' => $cpOrder,
                 ]);
 
@@ -139,7 +140,7 @@ class SmmOrderController extends Controller
             $order->update([
                 'crestpanel_order_id' => (string) $cpOrder['order'],
                 'provider_payload' => $cpOrder,
-                'status' => 'Pending',
+                'status' => SmmOrderStatus::Pending->value,
             ]);
 
             Log::channel('activity')->info('SMM order created successfully', [
@@ -149,7 +150,7 @@ class SmmOrderController extends Controller
                 'service' => $service->name,
                 'quantity' => $validated['quantity'],
                 'cost_ngn' => $priceData['total_price'],
-                'status' => 'pending_provider_confirmation → Pending (provider accepted)',
+                'status' => SmmOrderStatus::PendingProviderConfirmation->value . ' -> ' . SmmOrderStatus::Pending->value . ' (provider accepted)',
             ]);
 
             // Send Telegram notification about the new order
@@ -164,7 +165,7 @@ class SmmOrderController extends Controller
                     'link' => $order->link,
                     'quantity' => $order->quantity,
                     'total_cost_ngn' => (string) $order->total_cost_ngn,
-                    'status' => $order->status,
+                    'status' => $order->status->value,
                     'created_at' => $order->created_at->toIso8601String(),
                 ],
                 'remaining_balance' => $this->walletService->getBalance($user),
@@ -214,7 +215,7 @@ class SmmOrderController extends Controller
                     'link' => $order->link,
                     'quantity' => $order->quantity,
                     'total_cost_ngn' => (string) $order->total_cost_ngn,
-                    'status' => $order->status,
+                    'status' => $order->status->value,
                     'created_at' => $order->created_at->toIso8601String(),
                 ]),
                 'pagination' => [
@@ -248,7 +249,7 @@ class SmmOrderController extends Controller
             // Get real-time status from CrestPanel
             $statusData = $this->crestPanelService->getOrderStatus($order->crestpanel_order_id);
 
-            $status = $statusData['status'] ?? $order->status;
+            $status = $statusData['status'] ?? $order->status->value;
             $remains = $statusData['remains'] ?? null;
             $startCount = $statusData['start_count'] ?? null;
             $charge = isset($statusData['charge']) 
