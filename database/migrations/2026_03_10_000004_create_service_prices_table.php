@@ -14,6 +14,10 @@ return new class extends Migration
             $table->foreignId('service_id')->constrained()->cascadeOnDelete();
             $table->foreignId('country_id')->constrained()->cascadeOnDelete();
             $table->decimal('provider_price', 10, 2)->default(0);
+            $table->unsignedInteger('available_count')->default(0);
+            $table->unsignedInteger('operator_count')->default(0);
+            $table->json('provider_payload')->nullable();
+            $table->timestamp('last_seen_at')->nullable();
             $table->string('markup_type')->default(MarkupType::Fixed->value);
             $table->decimal('markup_value', 10, 2)->default(0);
             $table->decimal('final_price', 10, 2)->default(0);

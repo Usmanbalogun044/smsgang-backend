@@ -13,6 +13,12 @@ return new class extends Migration
             $table->string('name');
             $table->string('code', 10)->nullable()->unique(); // Increased length for fallbacks
             $table->string('provider_code')->nullable()->index(); // Add provider_code column
+            $table->string('provider_name_ru')->nullable();
+            $table->json('provider_iso')->nullable();
+            $table->json('provider_prefix')->nullable();
+            $table->json('provider_capabilities')->nullable();
+            $table->json('provider_payload')->nullable();
+            $table->timestamp('last_synced_at')->nullable();
             $table->string('flag')->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
