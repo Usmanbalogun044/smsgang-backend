@@ -1,0 +1,100 @@
+services:
+    app:
+        build:
+            context: .
+            dockerfile: Dockerfile
+            args:
+                WWWGROUP: 1000
+        container_name: smsgang-app
+        working_dir: /var/www/html
+        environment:
+            CONTAINER_ROLE: app
+            LARAVEL_SAIL: 1
+            WWWUSER: '${WWWUSER:-1000}'
+        ports:
+            - '${APP_PORT:-8001}:80'
+        depends_on:
+            mysql:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+        networks:
+            - smsgang
+        volumes:
+            - './:/var/www/html'
+            - /var/www/html/vendor
+            - /var/www/html/node_modules
+        healthcheck:
+            test:
+                - CMD
+                - curl
+                - '-f'
+                - 'http://localhost/health'
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 40s
+    mysql:
+        image: 'mysql:8.0'
+        container_name: smsgang-mysql
+        environment:
+            MYSQL_DATABASE: '${DB_DATABASE:-smsgang}'
+            MYSQL_USER: '${DB_USERNAME:-smsgang}'
+            MYSQL_PASSWORD: '${DB_PASSWORD:-secret123}'
+            MYSQL_ROOT_PASSWORD: '${DB_PASSWORD:-secret123}'
+            MYSQL_INITDB_SKIP_TZINFO: '1'
+        ports:
+            - '${FORWARD_DB_PORT:-3306}:3306'
+        networks:
+            - smsgang
+        volumes:
+            - 'mysql_data:/var/lib/mysql'
+            - './docker/mysql-init:/docker-entrypoint-initdb.d'
+        healthcheck:
+            test:
+                - CMD
+                - mysqladmin
+                - ping
+                - '-h'
+                - localhost
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 20s
+    redis:
+        image: 'redis:7-alpine'
+        container_name: smsgang-redis
+        command: 'redis-server --appendonly yes --replica-read-only no'
+        ports:
+            - '${FORWARD_REDIS_PORT:-6379}:6379'
+        networks:
+            - smsgang
+        volumes:
+            - 'redis_data:/data'
+        healthcheck:
+            test:
+                - CMD
+                - redis-cli
+                - ping
+            interval: 10s
+            timeout: 5s
+            retries: 5
+    adminer:
+        image: 'adminer:latest'
+        container_name: smsgang-adminer
+        ports:
+            - '9090:8080'
+        depends_on:
+            - mysql
+        networks:
+            - smsgang
+        environment:
+            ADMINER_DEFAULT_SERVER: mysql
+volumes:
+    mysql_data: null
+    redis_data: null
+    sail-mysql:
+        driver: local
+networks:
+    smsgang:
+        driver: bridge

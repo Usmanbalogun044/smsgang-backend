@@ -1,0 +1,1898 @@
+openapi: 3.1.0
+info:
+  title: SMSGang API
+  version: 1.0.0
+  description: |
+    The SMSGang REST API enables purchasing temporary virtual phone numbers for
+    SMS verification on 300+ global platforms. All monetary values are in **Nigerian Naira (₦)**.
+
+    ## Authentication
+    The API uses **Laravel Sanctum** bearer tokens. After registering or logging in,
+    include the token in every protected request via the `Authorization` header:
+    ```
+    Authorization: Bearer {token}
+    ```
+
+    ## Rate Limits
+    | Scope | Limit |
+    |---|---|
+    | `auth` | 10 req / min |
+    | `api` | 60 req / min |
+    | `buy` | 5 purchases / min |
+    | `sms-check` | 10 checks / min |
+    | `webhook` | 30 req / min |
+
+  contact:
+    name: SMSGang Support
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://api.smsgang.ng/api
+    description: Production
+  - url: http://localhost:8000/api
+    description: Local Development
+
+tags:
+  - name: Auth
+    description: Register, login, and manage sessions
+  - name: Catalog
+    description: Browse available services and countries (public)
+  - name: Activations
+    description: Purchase and manage SMS activations
+  - name: Orders
+    description: View order history
+  - name: Wallet
+    description: Manage account wallet balance and funding
+  - name: SMM
+    description: Purchase and manage social media marketing services
+  - name: Admin – Services
+    description: Manage the service catalog (admin only)
+  - name: Admin – Countries
+    description: Manage the country catalog (admin only)
+  - name: Admin – Pricing
+    description: View and override per-service pricing (admin only)
+  - name: Admin – Activations
+    description: Monitor all platform activations (admin only)
+  - name: Admin – Users
+    description: Manage user accounts (admin only)
+  - name: Admin – Settings
+    description: Global platform settings (admin only)
+  - name: Webhooks
+    description: Incoming webhook handlers
+
+# ─────────────────────────────────────────────
+#  PATHS
+# ─────────────────────────────────────────────
+paths:
+
+  # ── AUTH ─────────────────────────────────────
+  /register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      operationId: auth.register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              name: John Doe
+              email: john@example.com
+              password: secret1234
+              password_confirmation: secret1234
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /login:
+    post:
+      tags: [Auth]
+      summary: Log in and retrieve a bearer token
+      operationId: auth.login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: john@example.com
+              password: secret1234
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: Invalid credentials.
+        '403':
+          description: Account suspended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: Account suspended.
+
+  /logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the current access token
+      operationId: auth.logout
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Token revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: Logged out.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /user:
+    get:
+      tags: [Auth]
+      summary: Get the authenticated user
+      operationId: auth.user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Authenticated user object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  # ── CATALOG ──────────────────────────────────
+  /services:
+    get:
+      tags: [Catalog]
+      summary: List all active services
+      operationId: catalog.services
+      responses:
+        '200':
+          description: Collection of services
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceCollection'
+
+  /countries:
+    get:
+      tags: [Catalog]
+      summary: List all active countries
+      operationId: catalog.countries
+      responses:
+        '200':
+          description: Collection of countries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CountryCollection'
+
+  /services/{service}/countries:
+    get:
+      tags: [Catalog]
+      summary: Get available countries and live prices for a service
+      operationId: catalog.service.countries
+      parameters:
+        - $ref: '#/components/parameters/ServiceSlug'
+      responses:
+        '200':
+          description: Countries with real-time prices
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ServiceCountryPrice'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /countries/{country}/services:
+    get:
+      tags: [Catalog]
+      summary: Get available services for a country
+      operationId: catalog.country.services
+      parameters:
+        - $ref: '#/components/parameters/CountryCode'
+      responses:
+        '200':
+          description: Services available in the given country
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceCollection'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── ACTIVATIONS ──────────────────────────────
+  /activations:
+    get:
+      tags: [Activations]
+      summary: List own activations (paginated)
+      operationId: activations.index
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+      responses:
+        '200':
+          description: Paginated activation list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivationPage'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /activations/buy:
+    post:
+      tags: [Activations]
+      summary: Initiate a new number purchase
+      description: |
+        Creates a pending order and returns a Lendoverify checkout URL.
+        The user must complete payment before a number is assigned.
+      operationId: activations.buy
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BuyActivationRequest'
+            example:
+              service_id: 12
+              country_id: 5
+      responses:
+        '201':
+          description: Order created — redirect user to checkout_url
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    $ref: '#/components/schemas/Order'
+                  checkout_url:
+                    type: string
+                    format: uri
+                    example: https://pay.lendoverify.com/checkout/abc123
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /activations/{order}/verify-payment:
+    post:
+      tags: [Activations]
+      summary: Verify payment and assign a phone number
+      description: |
+        Call this endpoint after the user returns from the payment gateway.
+        If payment is confirmed the phone number is instantly assigned.
+      operationId: activations.verifyPayment
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: Payment confirmed and number assigned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Payment verified. Number assigned.
+                  activation:
+                    $ref: '#/components/schemas/Activation'
+        '402':
+          description: Payment not yet confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Payment not confirmed yet.
+                  payment_status:
+                    type: string
+                    example: pending
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /activations/{activation}:
+    get:
+      tags: [Activations]
+      summary: Get a single activation
+      operationId: activations.show
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ActivationId'
+      responses:
+        '200':
+          description: Activation detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Activation'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /activations/{activation}/check-sms:
+    get:
+      tags: [Activations]
+      summary: Poll for the SMS verification code
+      description: Fetches the latest SMS from the provider and updates the activation status.
+      operationId: activations.checkSms
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ActivationId'
+      responses:
+        '200':
+          description: Latest activation state with SMS code if received
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  activation:
+                    $ref: '#/components/schemas/Activation'
+                  sms_code:
+                    type: string
+                    nullable: true
+                    example: '482910'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /activations/{activation}/cancel:
+    post:
+      tags: [Activations]
+      summary: Cancel an active activation
+      operationId: activations.cancel
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ActivationId'
+      responses:
+        '200':
+          description: Activation cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Activation cancelled.
+                  activation:
+                    $ref: '#/components/schemas/Activation'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          description: Cannot cancel — already terminal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  # ── ORDERS ───────────────────────────────────
+  /orders:
+    get:
+      tags: [Orders]
+      summary: List own orders (paginated)
+      operationId: orders.index
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+      responses:
+        '200':
+          description: Paginated order list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPage'
+
+  /orders/{order}:
+    get:
+      tags: [Orders]
+      summary: Get a single order
+      operationId: orders.show
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: Order detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── ADMIN – SERVICES ─────────────────────────
+  /admin/services:
+    get:
+      tags: [Admin – Services]
+      summary: List all services
+      operationId: admin.services.index
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Full service list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceCollection'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/services/sync:
+    post:
+      tags: [Admin – Services]
+      summary: Dispatch background sync of services from 5SIM
+      operationId: admin.services.sync
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Sync job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /admin/services/{service}/toggle:
+    post:
+      tags: [Admin – Services]
+      summary: Toggle a service active/inactive
+      operationId: admin.services.toggle
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+      responses:
+        '200':
+          description: Service toggled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  service:
+                    $ref: '#/components/schemas/Service'
+
+  # ── ADMIN – COUNTRIES ────────────────────────
+  /admin/countries:
+    get:
+      tags: [Admin – Countries]
+      summary: List all countries
+      operationId: admin.countries.index
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Full country list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CountryCollection'
+
+  /admin/countries/sync:
+    post:
+      tags: [Admin – Countries]
+      summary: Dispatch background sync of countries from 5SIM
+      operationId: admin.countries.sync
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Sync job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /admin/countries/{country}/toggle:
+    post:
+      tags: [Admin – Countries]
+      summary: Toggle a country active/inactive
+      operationId: admin.countries.toggle
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CountryId'
+      responses:
+        '200':
+          description: Country toggled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  country:
+                    $ref: '#/components/schemas/Country'
+
+  # ── ADMIN – PRICING ──────────────────────────
+  /admin/prices:
+    get:
+      tags: [Admin – Pricing]
+      summary: List service prices (paginated, filterable)
+      operationId: admin.prices.index
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - name: service_id
+          in: query
+          schema:
+            type: integer
+        - name: country_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated price list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServicePricePage'
+
+  /admin/prices/sync:
+    post:
+      tags: [Admin – Pricing]
+      summary: Dispatch background pricing sync from 5SIM (~34k records)
+      operationId: admin.prices.sync
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Sync job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /admin/prices/{servicePrice}:
+    put:
+      tags: [Admin – Pricing]
+      summary: Override markup for a single price entry
+      operationId: admin.prices.update
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: servicePrice
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePricingRequest'
+            example:
+              markup_type: percent
+              markup_value: 20
+      responses:
+        '200':
+          description: Price updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServicePrice'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ── ADMIN – ACTIVATIONS ──────────────────────
+  /admin/activations:
+    get:
+      tags: [Admin – Activations]
+      summary: List all platform activations (paginated, filterable)
+      operationId: admin.activations.index
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ActivationStatus'
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated activation list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivationPage'
+
+  /admin/activations/{activation}/expire:
+    post:
+      tags: [Admin – Activations]
+      summary: Force-expire an activation
+      operationId: admin.activations.expire
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ActivationId'
+      responses:
+        '200':
+          description: Activation expired
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  activation:
+                    $ref: '#/components/schemas/Activation'
+        '422':
+          description: Already in terminal state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /admin/stats:
+    get:
+      tags: [Admin – Activations]
+      summary: Platform revenue and activity statistics
+      operationId: admin.stats
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Platform stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStats'
+
+  # ── ADMIN – USERS ────────────────────────────
+  /admin/users:
+    get:
+      tags: [Admin – Users]
+      summary: List all users (paginated)
+      operationId: admin.users.index
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+      responses:
+        '200':
+          description: Paginated user list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPage'
+
+  /admin/users/{user}:
+    put:
+      tags: [Admin – Users]
+      summary: Update a user's role or status
+      operationId: admin.users.update
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  $ref: '#/components/schemas/UserRole'
+                status:
+                  $ref: '#/components/schemas/UserStatus'
+            example:
+              status: suspended
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  # ── ADMIN – SETTINGS ─────────────────────────
+  /admin/settings:
+    get:
+      tags: [Admin – Settings]
+      summary: Get global platform settings
+      operationId: admin.settings.show
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settings'
+              example:
+                global_markup: 150
+                exchange_rate: 18
+
+    put:
+      tags: [Admin – Settings]
+      summary: Update global markup and exchange rate
+      operationId: admin.settings.update
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Settings'
+            example:
+              global_markup: 200
+              exchange_rate: 19.5
+      responses:
+        '200':
+          description: Settings saved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/MessageResponse'
+                  - $ref: '#/components/schemas/Settings'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ── WALLET ──────────────────────────────────
+  /wallet/balance:
+    get:
+      tags: [Wallet]
+      summary: Get wallet balance
+      operationId: wallet.getBalance
+      security:
+        - BearerToken: []
+      responses:
+        '200':
+          description: Wallet balance retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletBalance'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /wallet/fund:
+    post:
+      tags: [Wallet]
+      summary: Initiate wallet funding
+      description: Creates a payment link via Lendoverify for wallet funding.
+      operationId: wallet.fund
+      security:
+        - BearerToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount:
+                  type: number
+                  format: double
+                  minimum: 100
+                  maximum: 5000000
+                  description: Amount in NGN
+            example:
+              amount: 50000
+      responses:
+        '201':
+          description: Funding initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletFundResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /wallet/verify-funding:
+    post:
+      tags: [Wallet]
+      summary: Verify wallet funding payment
+      description: Confirms payment from Lendoverify and credits wallet.
+      operationId: wallet.verifyFunding
+      security:
+        - BearerToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reference]
+              properties:
+                reference:
+                  type: string
+                  description: Payment reference from Lendoverify
+            example:
+              reference: WALLET_123_abc456
+      responses:
+        '200':
+          description: Payment verified and wallet credited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletVerifyResponse'
+        '402':
+          description: Payment not confirmed yet
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /wallet/transactions:
+    get:
+      tags: [Wallet]
+      summary: Get wallet transaction history
+      operationId: wallet.getTransactions
+      security:
+        - BearerToken: []
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [debit, credit]
+          description: Filter by transaction type
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [all, today, week, month]
+          description: Filter by period
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Transaction history retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionHistory'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  # ── SMM SERVICES ────────────────────────────
+  /smm/services:
+    get:
+      tags: [SMM]
+      summary: List SMM services
+      description: Browse all available SMM services from CrestPanel.
+      operationId: smm.listServices
+      security:
+        - BearerToken: []
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+          description: Filter by service category
+        - name: type
+          in: query
+          schema:
+            type: string
+          description: Filter by service type
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: SMM services list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmmServiceList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /smm/services/{serviceId}:
+    get:
+      tags: [SMM]
+      summary: Get SMM service details
+      operationId: smm.getService
+      security:
+        - BearerToken: []
+      parameters:
+        - name: serviceId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Service details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmmService'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── SMM ORDERS ──────────────────────────────
+  /smm/orders:
+    post:
+      tags: [SMM]
+      summary: Create SMM order
+      description: Purchase and create a new SMM service order. Deducts cost from wallet.
+      operationId: smm.createOrder
+      security:
+        - BearerToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSmmOrderRequest'
+            example:
+              smm_service_id: 1
+              link: https://www.instagram.com/username
+              quantity: 100
+      responses:
+        '201':
+          description: Order created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmmOrderResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+    get:
+      tags: [SMM]
+      summary: List user's SMM orders
+      operationId: smm.listOrders
+      security:
+        - BearerToken: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [Pending, In progress, Partial, Completed, Failed, Cancelled]
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: User's SMM orders
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmmOrderList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /smm/orders/{orderId}:
+    get:
+      tags: [SMM]
+      summary: Get SMM order details
+      description: Retrieve order details with real-time status from CrestPanel.
+      operationId: smm.getOrder
+      security:
+        - BearerToken: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Order details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmmOrderDetail'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── WEBHOOKS ─────────────────────────────────
+  /webhooks/lendoverify:
+    post:
+      tags: [Webhooks]
+      summary: Lendoverify payment webhook
+      description: |
+        Receives payment status events from the Lendoverify gateway.
+        This endpoint is **public** (no auth) but validates the event payload.
+        Do not call this endpoint manually.
+      operationId: webhooks.lendoverify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Webhook processed
+        '400':
+          description: Invalid payload
+
+# ─────────────────────────────────────────────
+#  COMPONENTS
+# ─────────────────────────────────────────────
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Laravel Sanctum personal access token
+
+  # ── PARAMETERS ──────────────────────────────
+  parameters:
+    Page:
+      name: page
+      in: query
+      description: Page number (default 1, 20–50 items per page)
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    ServiceId:
+      name: service
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Service ID
+
+    ServiceSlug:
+      name: service
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Service slug (e.g. `whatsapp`)
+
+    CountryId:
+      name: country
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Country ID
+
+    CountryCode:
+      name: country
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Country ISO code or slug (e.g. `NG`)
+
+    ActivationId:
+      name: activation
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Activation ID
+
+    OrderId:
+      name: order
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Order ID
+
+    UserId:
+      name: user
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: User ID
+
+  # ── SCHEMAS ─────────────────────────────────
+  schemas:
+
+    # ---- Enums --------------------------------
+    ActivationStatus:
+      type: string
+      enum:
+        - requested
+        - number_received
+        - waiting_sms
+        - sms_received
+        - completed
+        - expired
+        - cancelled
+
+    OrderStatus:
+      type: string
+      enum:
+        - pending
+        - paid
+        - processing
+        - completed
+        - failed
+        - expired
+
+    UserRole:
+      type: string
+      enum:
+        - user
+        - admin
+
+    UserStatus:
+      type: string
+      enum:
+        - active
+        - suspended
+
+    MarkupType:
+      type: string
+      enum:
+        - fixed
+        - percent
+
+    # ---- Resource Objects ----------------------
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: John Doe
+        email:
+          type: string
+          format: email
+          example: john@example.com
+        role:
+          $ref: '#/components/schemas/UserRole'
+        status:
+          $ref: '#/components/schemas/UserStatus'
+        created_at:
+          type: string
+          format: date-time
+
+    Service:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 42
+        name:
+          type: string
+          example: WhatsApp
+        slug:
+          type: string
+          example: whatsapp
+        is_active:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+
+    Country:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 5
+        name:
+          type: string
+          example: Nigeria
+        code:
+          type: string
+          example: NG
+        flag:
+          type: string
+          example: 🇳🇬
+        is_active:
+          type: boolean
+          example: true
+
+    ServicePrice:
+      type: object
+      properties:
+        id:
+          type: integer
+        service:
+          $ref: '#/components/schemas/Service'
+        country:
+          $ref: '#/components/schemas/Country'
+        provider_price:
+          type: number
+          format: float
+          description: Raw cost in RUB (admin only)
+          example: 0.14
+        markup_type:
+          $ref: '#/components/schemas/MarkupType'
+        markup_value:
+          type: number
+          format: float
+          example: 0
+        final_price:
+          type: number
+          format: float
+          description: Final price in NGN
+          example: 350.00
+        is_active:
+          type: boolean
+
+    ServiceCountryPrice:
+      type: object
+      description: Live price entry as returned by /services/{service}/countries
+      properties:
+        country:
+          $ref: '#/components/schemas/Country'
+        cost_ngn:
+          type: number
+          format: float
+          description: Final price in NGN including exchange rate and global markup
+          example: 350.00
+        available_count:
+          type: integer
+          example: 4821
+
+    Order:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 100
+        user_id:
+          type: integer
+          example: 1
+        service:
+          $ref: '#/components/schemas/Service'
+        country:
+          $ref: '#/components/schemas/Country'
+        price:
+          type: number
+          format: float
+          example: 350.00
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        payment_reference:
+          type: string
+          example: LV-abc123xyz
+        checkout_url:
+          type: string
+          format: uri
+          nullable: true
+          description: Only present when status is `pending`
+          example: https://pay.lendoverify.com/checkout/abc123
+        activation:
+          allOf:
+            - $ref: '#/components/schemas/Activation'
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    Activation:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 55
+        order_id:
+          type: integer
+          example: 100
+        phone_number:
+          type: string
+          example: '+79161234567'
+        sms_code:
+          type: string
+          nullable: true
+          example: '482910'
+        status:
+          $ref: '#/components/schemas/ActivationStatus'
+        provider:
+          type: string
+          example: 5sim
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        service:
+          $ref: '#/components/schemas/Service'
+        country:
+          $ref: '#/components/schemas/Country'
+
+    Settings:
+      type: object
+      properties:
+        global_markup:
+          type: number
+          format: float
+          description: Fixed NGN markup added to every price
+          example: 150
+        exchange_rate:
+          type: number
+          format: float
+          description: RUB → NGN exchange rate used for price calculation
+          example: 18.0
+
+    AdminStats:
+      type: object
+      properties:
+        total_orders:
+          type: integer
+          example: 4512
+        total_revenue:
+          type: number
+          format: float
+          description: All-time completed order revenue in NGN
+          example: 1580220.00
+        active_activations:
+          type: integer
+          example: 73
+        registered_users:
+          type: integer
+          example: 892
+        revenue_today:
+          type: number
+          format: float
+          example: 12400.00
+        revenue_week:
+          type: number
+          format: float
+          example: 87500.00
+        revenue_month:
+          type: number
+          format: float
+          example: 342800.00
+
+    # ---- Request Bodies -----------------------
+    RegisterRequest:
+      type: object
+      required: [name, email, password, password_confirmation]
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        password_confirmation:
+          type: string
+          minLength: 8
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    BuyActivationRequest:
+      type: object
+      required: [service_id, country_id]
+      properties:
+        service_id:
+          type: integer
+          description: Must exist in `services` table and be active
+        country_id:
+          type: integer
+          description: Must have an active price entry for the chosen service
+
+    UpdatePricingRequest:
+      type: object
+      required: [markup_type, markup_value]
+      properties:
+        markup_type:
+          $ref: '#/components/schemas/MarkupType'
+        markup_value:
+          type: number
+          format: float
+          minimum: 0
+
+    # ---- Auth Response -------------------------
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        token:
+          type: string
+          description: Santum personal access token
+          example: 5|abc123xyz...
+
+    # ---- Utility Responses --------------------
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+
+    ValidationErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: The given data was invalid.
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          example:
+            email:
+              - The email has already been taken.
+
+    # ---- Paginated Collections ----------------
+    PaginationMeta:
+      type: object
+      properties:
+        current_page:
+          type: integer
+        last_page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+
+    PaginationLinks:
+      type: object
+      properties:
+        first:
+          type: string
+          format: uri
+        last:
+          type: string
+          format: uri
+        prev:
+          type: string
+          format: uri
+          nullable: true
+        next:
+          type: string
+          format: uri
+          nullable: true
+
+    ServiceCollection:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Service'
+
+    CountryCollection:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Country'
+
+    ActivationPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Activation'
+        links:
+          $ref: '#/components/schemas/PaginationLinks'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    OrderPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Order'
+        links:
+          $ref: '#/components/schemas/PaginationLinks'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    ServicePricePage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServicePrice'
+        links:
+          $ref: '#/components/schemas/PaginationLinks'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    UserPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        links:
+          $ref: '#/components/schemas/PaginationLinks'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # ── WALLET ──────────────────────────────────
+    WalletBalance:
+      type: object
+      properties:
+        balance:
+          type: string
+          format: decimal
+          example: "150000.00"
+        currency:
+          type: string
+          example: NGN
+
+    WalletFundResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Wallet funding initiated. Please complete payment.
+        checkout_url:
+          type: string
+          format: url
+          example: https://checkout.lendoverify.com/...
+        amount:
+          type: number
+          format: double
+          example: 50000
+        currency:
+          type: string
+          example: NGN
+        reference:
+          type: string
+          example: WALLET_123_abc456
+        fund_id:
+          type: string
+          example: WALLET_123_abc456
+
+    WalletVerifyResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Wallet funded successfully.
+        amount_credited:
+          type: number
+          format: double
+          example: 50000
+        new_balance:
+          type: string
+          format: decimal
+          example: "200000.00"
+        currency:
+          type: string
+          example: NGN
+
+    TransactionHistory:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              type:
+                type: string
+                enum: [debit, credit]
+              operation:
+                type: string
+                example: wallet_debit
+              amount:
+                type: string
+                format: decimal
+              reference:
+                type: string
+              description:
+                type: string
+              status:
+                type: string
+              created_at:
+                type: string
+                format: date-time
+        pagination:
+          $ref: '#/components/schemas/PaginationData'
+
+    # ── SMM SERVICES ────────────────────────────
+    SmmService:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        crestpanel_id:
+          type: string
+          example: "17009"
+        name:
+          type: string
+          example: Facebook Followers
+        category:
+          type: string
+          example: Facebook Services
+        type:
+          type: string
+          example: Default
+        rate:
+          type: string
+          format: decimal
+          example: "1992.4700"
+        min:
+          type: integer
+          example: 10
+        max:
+          type: integer
+          example: 100000
+        refill:
+          type: boolean
+          example: false
+        cancel:
+          type: boolean
+          example: true
+        final_price_ngn:
+          type: string
+          format: decimal
+          example: "3500.00"
+
+    SmmServiceList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SmmService'
+        pagination:
+          $ref: '#/components/schemas/PaginationData'
+
+    CreateSmmOrderRequest:
+      type: object
+      required: [smm_service_id, link, quantity]
+      properties:
+        smm_service_id:
+          type: integer
+          example: 1
+        link:
+          type: string
+          format: url
+          example: https://www.instagram.com/username
+        quantity:
+          type: integer
+          minimum: 1
+          example: 100
+        runs:
+          type: integer
+          nullable: true
+          example: null
+        interval:
+          type: integer
+          nullable: true
+          example: null
+        comments:
+          type: string
+          nullable: true
+          example: null
+
+    SmmOrderResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Order created successfully.
+        order:
+          type: object
+          properties:
+            id:
+              type: integer
+            crestpanel_order_id:
+              type: string
+            service_name:
+              type: string
+            link:
+              type: string
+            quantity:
+              type: integer
+            total_cost_ngn:
+              type: string
+              format: decimal
+            status:
+              type: string
+            created_at:
+              type: string
+              format: date-time
+        remaining_balance:
+          type: string
+          format: decimal
+
+    SmmOrderList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              crestpanel_order_id:
+                type: string
+              service_name:
+                type: string
+              link:
+                type: string
+              quantity:
+                type: integer
+              total_cost_ngn:
+                type: string
+                format: decimal
+              status:
+                type: string
+              created_at:
+                type: string
+                format: date-time
+        pagination:
+          $ref: '#/components/schemas/PaginationData'
+
+    SmmOrderDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+        crestpanel_order_id:
+          type: string
+        service:
+          type: object
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+        link:
+          type: string
+        quantity:
+          type: integer
+        total_cost_ngn:
+          type: string
+          format: decimal
+        charge_ngn:
+          type: string
+          format: decimal
+          nullable: true
+        status:
+          type: string
+          enum: [Pending, In progress, Partial, Completed, Failed, Cancelled]
+        remains:
+          type: integer
+          nullable: true
+        start_count:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+  # ── RESPONSES ───────────────────────────────
+  responses:
+    Unauthenticated:
+      description: Unauthenticated — missing or invalid bearer token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MessageResponse'
+          example:
+            message: Unauthenticated.
+
+    Forbidden:
+      description: Forbidden — insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MessageResponse'
+          example:
+            message: This action is unauthorized.
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MessageResponse'
+          example:
+            message: Not found.
+
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrorResponse'

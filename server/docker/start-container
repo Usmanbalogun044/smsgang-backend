@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+if [ ! -f "/.dockerenv" ]; then
+    echo "Script must be executed inside a Docker container"
+    exit 1
+fi
+
+set -e
+
+role=${CONTAINER_ROLE:-app}
+env=${APP_ENV:-production}
+
+if [ "$1" != "" ]; then
+    role=$1
+fi
+
+if [ "$role" = "app" ]; then
+    echo "Starting SMSGang Backend Application..."
+    
+    # Wait for database to be ready
+    echo "Waiting for database..."
+    until nc -z -v -w30 ${DB_HOST:-mysql} ${DB_PORT:-3306}; do
+        echo 'Database is unavailable - sleeping'
+        sleep 5
+    done
+    echo "Database is available"
+    
+    # Run migrations
+    echo "Running database migrations..."
+    php artisan migrate --force
+
+    # Optimize application
+    echo "Optimizing application..."
+    php artisan optimize:clear
+    php artisan optimize
+
+    # Start supervisor
+    echo "Starting supervisor..."
+    exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
+
+elif [ "$role" = "queue" ]; then
+    echo "Starting Queue Worker..."
+    exec php artisan queue:work redis --sleep=3 --tries=3 --max-time=3600
+
+elif [ "$role" = "scheduler" ]; then
+    echo "Starting Scheduler..."
+    exec php artisan schedule:work
+
+else
+    echo "Unknown role: $role"
+    exit 1
+fi
