@@ -1801,10 +1801,17 @@ components:
             properties:
               id:
                 type: integer
-              crestpanel_order_id:
-                type: string
               service_name:
                 type: string
+                nullable: true
+              service:
+                type: object
+                nullable: true
+                properties:
+                  id:
+                    type: integer
+                  name:
+                    type: string
               link:
                 type: string
               quantity:
@@ -1812,9 +1819,29 @@ components:
               total_cost_ngn:
                 type: string
                 format: decimal
+              charge_ngn:
+                type: string
+                format: decimal
+                nullable: true
               status:
                 type: string
+              remains:
+                type: integer
+                nullable: true
+              start_count:
+                type: integer
+                nullable: true
+              completed_quantity:
+                type: integer
+                nullable: true
+              progress_percent:
+                type: number
+                format: float
+                nullable: true
               created_at:
+                type: string
+                format: date-time
+              updated_at:
                 type: string
                 format: date-time
         pagination:
@@ -1825,10 +1852,12 @@ components:
       properties:
         id:
           type: integer
-        crestpanel_order_id:
+        service_name:
           type: string
+          nullable: true
         service:
           type: object
+          nullable: true
           properties:
             id:
               type: integer
@@ -1853,6 +1882,13 @@ components:
           nullable: true
         start_count:
           type: integer
+          nullable: true
+        completed_quantity:
+          type: integer
+          nullable: true
+        progress_percent:
+          type: number
+          format: float
           nullable: true
         created_at:
           type: string

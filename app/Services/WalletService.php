@@ -105,6 +105,35 @@ class WalletService
     }
 
     /**
+     * Refund funds to user's wallet
+     */
+    public function refundFunds(User $user, float $amount, string $reference, string $description): Transaction
+    {
+        return DB::transaction(function () use ($user, $amount, $reference, $description) {
+            $wallet = $this->getOrCreateWallet($user);
+
+            $payload = [
+                'user_id' => $user->id,
+                'amount' => $amount,
+                'type' => 'credit',
+                'status' => 'paid',
+                'reference' => $reference,
+                'description' => $description,
+            ];
+
+            if ($this->hasOperationTypeColumn()) {
+                $payload['operation_type'] = 'wallet_refund';
+            }
+
+            $transaction = Transaction::create($payload);
+
+            $wallet->addBalance($amount);
+
+            return $transaction;
+        });
+    }
+
+    /**
      * Get wallet transaction history
      */
     public function getTransactions(User $user, ?string $type = null, ?string $period = null, int $perPage = 20)
@@ -114,7 +143,8 @@ class WalletService
         if ($this->hasOperationTypeColumn()) {
             $query->where(function ($q) {
                 $q->where('operation_type', 'wallet_fund')
-                  ->orWhere('operation_type', 'wallet_debit');
+                  ->orWhere('operation_type', 'wallet_debit')
+                  ->orWhere('operation_type', 'wallet_refund');
             });
         } else {
             // Legacy schema fallback: wallet ledger is represented as credit/debit transaction types.

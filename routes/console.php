@@ -69,10 +69,10 @@ Schedule::job(new SyncSmmServicesJob())
         Log::channel('activity')->error('❌ SMM services sync failed');
     });
 
-// Check SMM order status every 5 minutes
+// Check SMM order status every 30 seconds for near-real-time progress
 Schedule::job(new CheckSmmOrderStatusJob())
     ->name('check-smm-orders')
-    ->everyFiveMinutes()
+    ->everyThirtySeconds()
     ->withoutOverlapping(10)
     ->onSuccess(function () {
         Log::channel('activity')->info('✅ SMM order status check completed');

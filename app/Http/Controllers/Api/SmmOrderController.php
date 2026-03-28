@@ -24,6 +24,62 @@ class SmmOrderController extends Controller
         private TelegramNotificationService $telegramService,
     ) {}
 
+    private function extractProgressMetrics(SmmOrder $order, ?array $statusData = null): array
+    {
+        $payload = $statusData ?? (is_array($order->provider_payload) ? $order->provider_payload : []);
+
+        $remains = isset($payload['remains']) && is_numeric($payload['remains'])
+            ? max(0, (int) $payload['remains'])
+            : null;
+
+        $startCount = isset($payload['start_count']) && is_numeric($payload['start_count'])
+            ? (int) $payload['start_count']
+            : null;
+
+        $completedQuantity = is_int($remains)
+            ? max(0, (int) $order->quantity - $remains)
+            : null;
+
+        $progressPercent = is_int($completedQuantity) && (int) $order->quantity > 0
+            ? min(100, round(($completedQuantity / (int) $order->quantity) * 100, 2))
+            : null;
+
+        return [
+            'remains' => $remains,
+            'start_count' => $startCount,
+            'completed_quantity' => $completedQuantity,
+            'progress_percent' => $progressPercent,
+        ];
+    }
+
+    private function formatOrderForUser(SmmOrder $order, ?array $statusData = null): array
+    {
+        $statusPayload = is_array($statusData) ? $statusData : [];
+        $progress = $this->extractProgressMetrics($order, $statusPayload);
+
+        return [
+            'id' => $order->id,
+            'service_name' => $order->service?->name,
+            'service' => $order->service ? [
+                'id' => $order->service->id,
+                'name' => $order->service->name,
+            ] : null,
+            'link' => $order->link,
+            'quantity' => $order->quantity,
+            'total_cost_ngn' => (string) $order->total_cost_ngn,
+            'charge_ngn' => isset($statusPayload['charge'])
+                ? (string) ((float) $statusPayload['charge'])
+                : ($order->charge_ngn !== null ? (string) $order->charge_ngn : null),
+            'status' => $statusPayload['status'] ?? $order->status->value,
+            'remains' => $progress['remains'],
+            'start_count' => $progress['start_count'],
+            'completed_quantity' => $progress['completed_quantity'],
+            'progress_percent' => $progress['progress_percent'],
+            'created_at' => $order->created_at->toIso8601String(),
+            'updated_at' => $order->updated_at->toIso8601String(),
+        ];
+    }
+
     /**
      * Create a new SMM order
      */
@@ -121,18 +177,27 @@ class SmmOrderController extends Controller
                     'note' => 'Order created locally and funds deducted, but provider failed',
                 ]);
 
-                // Update order with failed status (but keep it in database with funds deducted)
+                // STEP 4A: REFUND THE USER IMMEDIATELY
+                $this->walletService->refundFunds(
+                    $user,
+                    $finalPriceNgn,
+                    "smm_order_{$order->id}_refund",
+                    "Refund: SMM order failed at provider - Order #{$order->id}"
+                );
+
+                // Update order with failed status
                 $order->update([
                     'status' => SmmOrderStatus::FailedAtProvider->value,
                     'provider_payload' => $cpOrder,
                 ]);
 
-                // Return user-friendly message with order proof
+                // Return user-friendly message with refund confirmation
                 return response()->json([
-                    'message' => 'Order recorded but provider processing failed. Please contact support with order ID to resolve this.',
+                    'message' => 'Provider processing failed. Full amount has been refunded to your wallet.',
                     'error' => 'provider_error',
                     'order_id' => $order->id,
-                    'reason' => 'Please screenshot this message for support',
+                    'refunded_amount' => $finalPriceNgn,
+                    'reason' => 'Please contact support if issue persists',
                 ], 422);
             }
 
@@ -158,16 +223,7 @@ class SmmOrderController extends Controller
 
             return response()->json([
                 'message' => 'Order created and sent to provider successfully.',
-                'order' => [
-                    'id' => $order->id,
-                    'crestpanel_order_id' => $order->crestpanel_order_id,
-                    'service_name' => $service->name,
-                    'link' => $order->link,
-                    'quantity' => $order->quantity,
-                    'total_cost_ngn' => (string) $order->total_cost_ngn,
-                    'status' => $order->status->value,
-                    'created_at' => $order->created_at->toIso8601String(),
-                ],
+                'order' => $this->formatOrderForUser($order->fresh('service')),
                 'remaining_balance' => $this->walletService->getBalance($user),
             ], 201);
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -208,16 +264,7 @@ class SmmOrderController extends Controller
             $orders = $query->latest()->paginate($perPage);
 
             return response()->json([
-                'data' => $orders->map(fn ($order) => [
-                    'id' => $order->id,
-                    'crestpanel_order_id' => $order->crestpanel_order_id,
-                    'service_name' => $order->service ? $order->service->name : 'Unknown',
-                    'link' => $order->link,
-                    'quantity' => $order->quantity,
-                    'total_cost_ngn' => (string) $order->total_cost_ngn,
-                    'status' => $order->status->value,
-                    'created_at' => $order->created_at->toIso8601String(),
-                ]),
+                'data' => $orders->map(fn ($order) => $this->formatOrderForUser($order)),
                 'pagination' => [
                     'total' => $orders->total(),
                     'per_page' => $orders->perPage(),
@@ -246,33 +293,14 @@ class SmmOrderController extends Controller
                 ], 403);
             }
 
-            // Get real-time status from CrestPanel
-            $statusData = $this->crestPanelService->getOrderStatus($order->crestpanel_order_id);
+            $order->loadMissing('service');
 
-            $status = $statusData['status'] ?? $order->status->value;
-            $remains = $statusData['remains'] ?? null;
-            $startCount = $statusData['start_count'] ?? null;
-            $charge = isset($statusData['charge']) 
-                ? (float) $statusData['charge'] 
-                : $order->charge_ngn;
+            $statusData = null;
+            if ($order->crestpanel_order_id) {
+                $statusData = $this->crestPanelService->getOrderStatus($order->crestpanel_order_id);
+            }
 
-            return response()->json([
-                'id' => $order->id,
-                'crestpanel_order_id' => $order->crestpanel_order_id,
-                'service' => $order->service ? [
-                    'id' => $order->service->id,
-                    'name' => $order->service->name,
-                ] : null,
-                'link' => $order->link,
-                'quantity' => $order->quantity,
-                'total_cost_ngn' => (string) $order->total_cost_ngn,
-                'charge_ngn' => $charge ? (string) $charge : null,
-                'status' => $status,
-                'remains' => $remains,
-                'start_count' => $startCount,
-                'created_at' => $order->created_at->toIso8601String(),
-                'updated_at' => $order->updated_at->toIso8601String(),
-            ]);
+            return response()->json($this->formatOrderForUser($order, is_array($statusData) ? $statusData : null));
         } catch (Throwable $e) {
             return response()->json([
                 'message' => 'Failed to fetch order.',
