@@ -16,7 +16,7 @@ services:
       start_period: 10s
 
   smsgang-app:
-    image: "${DOCKER_USERNAME:?DOCKER_USERNAME is required}usmanbalogun044/smsgang-backend:${DOCKER_TAG:-latest}"
+    image: "${DOCKER_USERNAME}/smsgang-backend:${DOCKER_TAG:-latest}"
     container_name: smsgang-app-prod
     restart: always
     working_dir: /var/www/html
@@ -25,23 +25,29 @@ services:
       APP_ENV: production
       APP_DEBUG: "false"
       APP_URL: ${APP_URL:-https://api.smsgang.org}
-      DB_CONNECTION: pgsql
-      DB_HOST: ${DB_HOST:?DB_HOST is required}
-      DB_PORT: ${DB_PORT:-5432}
-      DB_DATABASE: ${DB_DATABASE:-smsgangdb}
+
+      # ── MySQL (running on VPS host, outside Docker) ──────────────────
+      DB_CONNECTION: mysql
+      DB_HOST: ${DB_HOST:-172.17.0.1}   # Docker gateway → VPS host MySQL
+      DB_PORT: ${DB_PORT:-3306}
+      DB_DATABASE: ${DB_DATABASE:-smsgang_db}
       DB_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+
+      # ── Redis (inside Docker) ─────────────────────────────────────────
       REDIS_HOST: smsgang-redis
       REDIS_PORT: 6379
       REDIS_CLIENT: phpredis
       QUEUE_CONNECTION: redis
       CACHE_STORE: redis
       SESSION_DRIVER: redis
+
+      # ── App config ────────────────────────────────────────────────────
       LOG_CHANNEL: stack
       SESSION_DOMAIN: .smsgang.org
       SESSION_SECURE_COOKIE: "true"
       SESSION_SAME_SITE: "none"
-      SANCTUM_STATEFUL_DOMAINS: smsgang.ord,www.smsgang.org
+      SANCTUM_STATEFUL_DOMAINS: smsgang.org,www.smsgang.org
       CORS_ALLOWED_ORIGINS: https://smsgang.org,https://www.smsgang.org
       CORS_SUPPORTS_CREDENTIALS: "true"
     env_file:
@@ -110,6 +116,8 @@ services:
     restart: always
     ports:
       - "9003:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: 172.17.0.1   # Points to VPS host MySQL
     networks:
       - smsgang
     depends_on:
