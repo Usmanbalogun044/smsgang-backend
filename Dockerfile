@@ -1,6 +1,6 @@
 FROM ubuntu:22.04
 
-LABEL maintainer="Tega"
+LABEL maintainer="smsgang"
 
 ARG WWWGROUP=1000
 ARG NODE_VERSION=18
@@ -8,7 +8,7 @@ ARG POSTGRES_VERSION=15
 
 WORKDIR /var/www/html
 
-ENV DEBIAN_FRONTEND noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -59,6 +59,14 @@ RUN chmod +x /usr/local/bin/start-container
 
 # Copy application files
 COPY . .
+
+# Ensure Laravel writable/cache directories exist before composer scripts run.
+RUN mkdir -p /var/www/html/bootstrap/cache \
+    /var/www/html/storage/framework/cache \
+    /var/www/html/storage/framework/sessions \
+    /var/www/html/storage/framework/views \
+    /var/www/html/storage/logs \
+    && chmod -R 775 /var/www/html/bootstrap /var/www/html/storage
 
 # Install dependencies
 RUN composer install --no-ansi --no-dev --no-interaction --no-progress --optimize-autoloader
