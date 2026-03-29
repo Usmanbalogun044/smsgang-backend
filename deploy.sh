@@ -130,6 +130,12 @@ docker-compose -f docker-compose.prod.yml up -d
 echo '⏳ Waiting for services to stabilize...'
 sleep 15
 
+docker-compose -f docker-compose.prod.yml ps --services --status running | grep -q '^nginx$' || {
+    echo '❌ nginx service is not running after startup';
+    docker-compose -f docker-compose.prod.yml logs --tail=100 nginx || true;
+    exit 1;
+}
+
 if [ -n "${CERTBOT_DOMAIN:-}" ] && [ -n "${CERTBOT_EMAIL:-}" ]; then
     if [ ! -f "/data/certbot/letsencrypt/live/${CERTBOT_DOMAIN}/fullchain.pem" ]; then
         echo '🔐 First-time certificate generation...'
@@ -155,8 +161,11 @@ docker image prune -f
 echo '📋 Running status check...'
 docker-compose -f docker-compose.prod.yml ps
 
-echo '🏥 Running local health check...'
-curl -fsS http://localhost/api/health >/dev/null 2>&1 || curl -fsS http://localhost/health >/dev/null 2>&1
+echo '🏥 Running app container health check...'
+docker-compose -f docker-compose.prod.yml exec -T app curl -fsS http://localhost/api/health >/dev/null
+
+echo '🏥 Running VPS localhost health check...'
+curl -fsS http://localhost/api/health >/dev/null
 
 echo '✅ Deployment completed!'
 REMOTE_SCRIPT

@@ -109,6 +109,8 @@ jobs:
           DOCKER_REGISTRY: ghcr.io
           DOCKER_IMAGE: ${{ needs.build.outputs.owner }}/smsgang-backend
           DOCKER_TAG: ${{ needs.build.outputs.image_tag }}
+          CERTBOT_DOMAIN: ${{ secrets.CERTBOT_DOMAIN }}
+          CERTBOT_EMAIL: ${{ secrets.CERTBOT_EMAIL }}
         run: |
           bash deploy.sh
 
@@ -147,12 +149,20 @@ jobs:
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PATH: ${{ secrets.VPS_PATH }}
         run: |
-          echo "Checking health from inside VPS at http://localhost/api/health"
+          echo "Checking health from inside app container and VPS localhost"
           for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
-            ssh "$VPS_USER@$VPS_HOST" "curl -fsS http://localhost/api/health" && echo "Health check passed" && exit 0
+            if ssh "$VPS_USER@$VPS_HOST" "cd '$VPS_PATH' && docker-compose -f docker-compose.prod.yml exec -T app curl -fsS http://localhost/api/health >/dev/null" \
+              && ssh "$VPS_USER@$VPS_HOST" "curl -fsS http://localhost/api/health >/dev/null"; then
+              echo "Health check passed"
+              exit 0
+            fi
             echo "Attempt $i failed, retrying in 10s..."
             sleep 10
           done
+          echo "Container and/or nginx health checks failed. Dumping diagnostics..."
+          ssh "$VPS_USER@$VPS_HOST" "cd '$VPS_PATH' && docker-compose -f docker-compose.prod.yml ps"
+          ssh "$VPS_USER@$VPS_HOST" "cd '$VPS_PATH' && docker-compose -f docker-compose.prod.yml logs --tail=80 nginx app || true"
           echo "Health check failed after 12 attempts"
           exit 1
