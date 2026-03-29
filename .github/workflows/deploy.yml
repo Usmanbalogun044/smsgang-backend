@@ -153,7 +153,7 @@ jobs:
 
           echo "🏥 Running HTTP health check..."
           ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-            "curl -fsS http://localhost/health" \
+            "curl -fsS http://localhost/api/health" \
             && echo "✅ Health check passed" || { echo "❌ Health check failed"; exit 1; }
 
       - name: Notify on failure

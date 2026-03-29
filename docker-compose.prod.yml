@@ -28,7 +28,7 @@ services:
 
       # ── MySQL (running on VPS host, outside Docker) ──────────────────
       DB_CONNECTION: mysql
-      DB_HOST: ${DB_HOST:-172.17.0.1}   # Docker gateway → VPS host MySQL
+      DB_HOST: ${DB_HOST:-172.17.0.1}
       DB_PORT: ${DB_PORT:-3306}
       DB_DATABASE: ${DB_DATABASE:-smsgang_db}
       DB_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
@@ -59,15 +59,19 @@ services:
       - ./.env:/var/www/html/.env:ro
       - /data/certbot/letsencrypt/:/etc/letsencrypt/:ro
       - /data/certbot/www/:/var/www/html/public/.well-known/acme-challenge/:ro
-      - ./storage:/var/www/html/storage
-      - ./bootstrap/cache:/var/www/html/bootstrap/cache
+      # ✅ Named volumes instead of host bind mounts
+      # This stops empty host folders wiping container storage
+      - smsgang_storage_logs:/var/www/html/storage/logs
+      - smsgang_storage_app:/var/www/html/storage/app
+      # ✅ bootstrap/cache removed — lives inside container
     depends_on:
       smsgang-redis:
         condition: service_healthy
     networks:
       - smsgang
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      # ✅ Fixed: was /health, now /api/health
+      test: ["CMD", "curl", "-f", "http://localhost/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -117,7 +121,7 @@ services:
     ports:
       - "9003:8080"
     environment:
-      ADMINER_DEFAULT_SERVER: 172.17.0.1   # Points to VPS host MySQL
+      ADMINER_DEFAULT_SERVER: 172.17.0.1
     networks:
       - smsgang
     depends_on:
@@ -129,3 +133,5 @@ networks:
 
 volumes:
   redis_data:
+  smsgang_storage_logs:  # Laravel logs — persists across deploys
+  smsgang_storage_app:   # Uploaded files — persists across deploys
