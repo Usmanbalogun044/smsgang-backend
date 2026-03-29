@@ -1,185 +1,157 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
-set -euo pipefail
+set -e
 
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║      SMSGang Backend - Docker Registry Deployment to VPS    ║"
+echo "║      Smsgangbackend - Docker Registry Deployment to VPS     ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 
-if [ -z "${VPS_HOST:-}" ] || [ -z "${VPS_USER:-}" ]; then
-        echo "❌ Error: Missing required environment variables"
-        echo "Required: VPS_HOST, VPS_USER"
-        exit 1
+# Check required environment variables
+if [ -z "$VPS_HOST" ] || [ -z "$VPS_USER" ] || [ -z "$DOCKER_USERNAME" ]; then
+    echo "❌ Error: Missing required environment variables"
+    echo ""
+    echo "Required variables:"
+    echo "  VPS_HOST          - VPS hostname or IP address"
+    echo "  VPS_USER          - SSH user for deployment"
+    echo "  DOCKER_USERNAME   - Docker Hub username"
+    echo ""
+    echo "Optional variables:"
+    echo "  VPS_PATH          - Path on VPS (default: /home/deploy/tegaai)"
+    echo "  DOCKER_REGISTRY   - Docker registry (default: docker.io)"
+    echo "  DOCKER_IMAGE      - Docker image name (default: tegaai-backend)"
+    echo "  DOCKER_TAG        - Docker image tag (default: latest)"
+    echo ""
+    echo "Example:"
+    echo "  export VPS_HOST=example.com"
+    echo "  export VPS_USER=deploy"
+    echo "  bash deploy.sh"
+    exit 1
 fi
 
-VPS_PATH="${VPS_PATH:-/home/deploy/smsgang}"
-DOCKER_REGISTRY="${DOCKER_REGISTRY:-ghcr.io}"
-DOCKER_IMAGE="${DOCKER_IMAGE:-usmanbalogun044/smsgang-backend}"
+VPS_PATH="${VPS_PATH:-/home/deploy/tegaai}"
+DOCKER_REGISTRY="${DOCKER_REGISTRY:-docker.io}"
+DOCKER_IMAGE="${DOCKER_IMAGE:-tegaai-backend}"
 DOCKER_TAG="${DOCKER_TAG:-latest}"
-CERTBOT_DOMAIN="${CERTBOT_DOMAIN:-}"
-CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
 
 VPS_REPO="${VPS_USER}@${VPS_HOST}"
-
-if [ -f "docker-compose.prod.yml" ]; then
-        COMPOSE_FILE="docker-compose.prod.yml"
-elif [ -f "docker-compose.production.yml" ]; then
-        COMPOSE_FILE="docker-compose.production.yml"
-else
-        echo "❌ Missing compose file (docker-compose.prod.yml or docker-compose.production.yml)"
-        exit 1
-fi
 
 echo "📦 Deployment target: $VPS_REPO:$VPS_PATH"
 echo "🐳 Docker image: $DOCKER_REGISTRY/$DOCKER_IMAGE:$DOCKER_TAG"
 echo ""
 
+# Step 1: Create deployment directory on VPS
 echo "📁 Step 1: Creating deployment directory..."
-ssh "$VPS_REPO" "mkdir -p '$VPS_PATH/server' && cd '$VPS_PATH' && pwd"
+ssh "$VPS_REPO" "mkdir -p $VPS_PATH && cd $VPS_PATH && pwd"
 echo "✅ Directory ready"
 echo ""
 
-echo "📤 Step 2: Uploading configuration..."
-scp "$COMPOSE_FILE" "$VPS_REPO:$VPS_PATH/docker-compose.prod.yml"
-scp openapi.yml "$VPS_REPO:$VPS_PATH/openapi.yml"
-scp server/default-production.conf "$VPS_REPO:$VPS_PATH/server/default-production.conf"
-scp .env.production "$VPS_REPO:$VPS_PATH/.env.deploy-template" 2>/dev/null || true
-echo "✅ Configuration uploaded"
+# Step 2: Verify configs uploaded by GitHub Actions
+echo "📋 Step 2: Verifying configuration on VPS..."
+ssh "$VPS_REPO" bash << VERIFY_SCRIPT
+  [ -f $VPS_PATH/.env ] || { echo '❌ Missing .env on VPS'; exit 1; }
+  [ -f $VPS_PATH/openapi.yml ] || { echo '❌ Missing openapi.yml on VPS'; exit 1; }
+  [ -f $VPS_PATH/docker-compose.prod.yml ] || { echo '❌ Missing docker-compose.prod.yml on VPS'; exit 1; }
+  [ -f $VPS_PATH/docker/nginx.conf ] || { echo '❌ Missing docker/nginx.conf on VPS'; exit 1; }
+  grep -q '^APP_KEY=' $VPS_PATH/.env || { echo '❌ Missing APP_KEY in .env'; exit 1; }
+  grep -q '^DB_HOST=' $VPS_PATH/.env || { echo '❌ Missing DB_HOST in .env'; exit 1; }
+  grep -q '^DB_USERNAME=' $VPS_PATH/.env || { echo '❌ Missing DB_USERNAME in .env'; exit 1; }
+  grep -q '^DB_PASSWORD=' $VPS_PATH/.env || { echo '❌ Missing DB_PASSWORD in .env'; exit 1; }
+  echo '✅ All config files verified'
+VERIFY_SCRIPT
 echo ""
 
-echo "🔐 Step 3: Checking .env file on VPS..."
-if ssh "$VPS_REPO" "test -f '$VPS_PATH/.env'"; then
-        echo "⚠️  .env already exists on VPS. Skipping upload."
-else
-        echo "📄 .env not found. Creating from template..."
-        scp .env.production "$VPS_REPO:$VPS_PATH/.env" 2>/dev/null || {
-                echo "⚠️  .env.production template not found locally"
-                echo "   Create .env manually on VPS before deployment"
-        }
-fi
-echo ""
-
+# Step 4: Deploy via docker-compose
 echo "🚀 Step 4: Deploying to VPS..."
-ssh "$VPS_REPO" \
-    "VPS_PATH='$VPS_PATH' DOCKER_REGISTRY='$DOCKER_REGISTRY' DOCKER_IMAGE='$DOCKER_IMAGE' DOCKER_TAG='$DOCKER_TAG' CERTBOT_DOMAIN='$CERTBOT_DOMAIN' CERTBOT_EMAIL='$CERTBOT_EMAIL' bash -s" <<'REMOTE_SCRIPT'
-set -euo pipefail
+DOCKER_USERNAME_VAR="$DOCKER_USERNAME"
+DOCKER_TAG_VAR="$DOCKER_TAG"
+VPS_PATH_VAR="$VPS_PATH"
 
-cd "$VPS_PATH"
+ssh "$VPS_REPO" bash <<EOF
+set -e
+cd "$VPS_PATH_VAR"
 
+export DOCKER_USERNAME="$DOCKER_USERNAME_VAR"
+export DOCKER_TAG="$DOCKER_TAG_VAR"
+
+# Validate required files exist
+[ -f docker/nginx.conf ] || { echo '❌ Missing docker/nginx.conf on VPS'; exit 1; }
 [ -f .env ] || { echo '❌ Missing .env on VPS'; exit 1; }
 [ -f openapi.yml ] || { echo '❌ Missing openapi.yml on VPS'; exit 1; }
-[ -f docker-compose.prod.yml ] || { echo '❌ Missing docker-compose.prod.yml on VPS'; exit 1; }
-[ -f server/default-production.conf ] || { echo '❌ Missing server/default-production.conf on VPS'; exit 1; }
-
-DB_HOST_CURRENT=$(grep -E '^DB_HOST=' .env | tail -n1 | cut -d= -f2- || true)
-if [ "$DB_HOST_CURRENT" = "smsgangdatabase" ]; then
-    echo '⚠️  Legacy DB_HOST detected in VPS .env (smsgangdatabase). Updating from .env.deploy-template...'
-    [ -f .env.deploy-template ] || { echo '❌ Missing .env.deploy-template; cannot auto-fix DB settings'; exit 1; }
-
-    upsert_env_var() {
-        key="$1"
-        value="$2"
-        escaped_value=$(printf '%s' "$value" | sed 's/[&|]/\\&/g')
-        if grep -q "^${key}=" .env; then
-            sed -i "s|^${key}=.*|${key}=${escaped_value}|" .env
-        else
-            echo "${key}=${value}" >> .env
-        fi
-    }
-
-    for key in DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD; do
-        val=$(grep -E "^${key}=" .env.deploy-template | tail -n1 | cut -d= -f2- || true)
-        [ -n "$val" ] && upsert_env_var "$key" "$val"
-    done
-
-    echo '✅ DB settings updated from .env.deploy-template'
-fi
-
-DB_HOST_EFFECTIVE=$(grep -E '^DB_HOST=' .env | tail -n1 | cut -d= -f2- || true)
-[ -n "$DB_HOST_EFFECTIVE" ] || { echo '❌ DB_HOST missing in .env'; exit 1; }
-echo "ℹ️  Using DB_HOST=$DB_HOST_EFFECTIVE"
-
-echo '📋 Rendered image values:'
-docker-compose -f docker-compose.prod.yml config | grep -E 'image:' || true
 
 echo '📥 Pulling latest Docker image...'
-docker-compose -f docker-compose.prod.yml pull
+docker compose --env-file .env -f docker-compose.prod.yml pull
 
 echo '⏹️  Stopping old containers...'
-docker-compose -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
+docker compose --env-file .env -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
 
 echo '🚀 Starting app container first...'
-docker-compose -f docker-compose.prod.yml up -d --scale app=1 app
+docker compose --env-file .env -f docker-compose.prod.yml up -d tegaai-app
 
 echo '⏳ Waiting for app container to be healthy...'
-for i in $(seq 1 12); do
-    STATUS=$(docker inspect --format='{{.State.Health.Status}}' smsgang-app 2>/dev/null || echo 'starting')
-    echo "   Health status: $STATUS (attempt $i/12)"
-    if [ "$STATUS" = "healthy" ] || [ "$STATUS" = "running" ]; then
-        break
-    fi
-    sleep 5
+for i in \$(seq 1 12); do
+  STATUS=\$(docker inspect --format='{{.State.Health.Status}}' tegaai-app-prod 2>/dev/null || echo 'starting')
+  echo "   Health status: \$STATUS (attempt \$i/12)"
+  if [ "\$STATUS" = "healthy" ]; then
+    break
+  fi
+  sleep 5
 done
 
-docker-compose -f docker-compose.prod.yml ps --services --status running | grep -q '^app$' \
-    || { echo '❌ app service is not running'; exit 1; }
+echo '🚀 Starting remaining services (dozzle, swagger, adminer, certbot)...'
+docker compose --env-file .env -f docker-compose.prod.yml up -d
 
-echo '🚀 Starting remaining services...'
-docker-compose -f docker-compose.prod.yml up -d
-
-echo '⏳ Waiting for services to stabilize...'
+echo '⏹️  Waiting for services to stabilize...'
 sleep 15
 
-docker-compose -f docker-compose.prod.yml ps --services --status running | grep -q '^nginx$' || {
-    echo '❌ nginx service is not running after startup';
-    docker-compose -f docker-compose.prod.yml logs --tail=100 nginx || true;
-    exit 1;
-}
-
-if [ -n "${CERTBOT_DOMAIN:-}" ] && [ -n "${CERTBOT_EMAIL:-}" ]; then
-    if [ ! -f "/data/certbot/letsencrypt/live/${CERTBOT_DOMAIN}/fullchain.pem" ]; then
-        echo '🔐 First-time certificate generation...'
-        docker-compose -f docker-compose.prod.yml run --rm --entrypoint /bin/sh certbot \
-            -c "certbot certonly --webroot -w /var/www/certbot --email '${CERTBOT_EMAIL}' -d '${CERTBOT_DOMAIN}' --agree-tos --non-interactive" \
-            || echo '⚠️  Cert generation skipped/failed (will retry on renew loop)'
-        docker-compose -f docker-compose.prod.yml restart nginx || true
-    fi
+echo '🔐 Generating SSL certificates with certbot...'
+if [ ! -f /data/certbot/letsencrypt/live/api.tega.study/fullchain.pem ]; then
+  echo '   First-time certificate generation...'
+  docker compose --env-file .env -f docker-compose.prod.yml run --rm --entrypoint /bin/sh tegaai-certbot -c "certbot certonly --webroot -w /var/www/certbot --email 'noreply@tega.study' -d api.tega.study --agree-tos --non-interactive" || echo '⚠️  Cert generation in progress or skipped'
+  sleep 5
+  docker compose --env-file .env -f docker-compose.prod.yml restart tegaai-app
+  sleep 3
+else
+  echo '   Certificates already exist, skipping generation'
 fi
 
+echo '�🔧 Fixing Laravel runtime permissions...'
+docker compose --env-file .env -f docker-compose.prod.yml exec -T tegaai-app sh -lc "mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache && chmod -R 777 storage bootstrap/cache" 2>/dev/null || true
+
 echo '🔄 Running database migrations...'
-docker-compose -f docker-compose.prod.yml exec -T app php artisan migrate --force
+docker compose --env-file .env -f docker-compose.prod.yml exec -T tegaai-app php artisan migrate --force
 
-echo '⚙️  Optimizing Laravel...'
-docker-compose -f docker-compose.prod.yml exec -T app php artisan optimize:clear 2>/dev/null || true
-docker-compose -f docker-compose.prod.yml exec -T app php artisan config:cache 2>/dev/null || true
-docker-compose -f docker-compose.prod.yml exec -T app php artisan route:cache 2>/dev/null || true
-docker-compose -f docker-compose.prod.yml exec -T app php artisan event:cache 2>/dev/null || true
+echo '⚙️  Caching Laravel config/routes/events...'
+docker compose --env-file .env -f docker-compose.prod.yml exec -T tegaai-app php artisan optimize:clear 2>/dev/null || true
+docker compose --env-file .env -f docker-compose.prod.yml exec -T tegaai-app php artisan config:cache 2>/dev/null || true
+docker compose --env-file .env -f docker-compose.prod.yml exec -T tegaai-app php artisan route:cache 2>/dev/null || true
+docker compose --env-file .env -f docker-compose.prod.yml exec -T tegaai-app php artisan event:cache 2>/dev/null || true
 
-echo '🧹 Cleaning dangling images...'
-docker image prune -f
-
+echo ''
 echo '📋 Running status check...'
-docker-compose -f docker-compose.prod.yml ps
+docker compose --env-file .env -f docker-compose.prod.yml ps
 
-echo '🏥 Running app container health check...'
-docker-compose -f docker-compose.prod.yml exec -T app curl -fsS http://localhost/api/health >/dev/null
+docker compose --env-file .env -f docker-compose.prod.yml ps --services --status running | grep -q '^tegaai-app$' \
+  || { echo '❌ tegaai-app container is not running'; exit 1; }
 
-echo '🏥 Running VPS localhost health check...'
-curl -fsS http://localhost/api/health >/dev/null
+echo ''
+echo '🏥 Running health check...'
+curl -fsS http://localhost/health && echo '✅ Health check passed' \
+  || { echo '❌ Health check failed'; exit 1; }
 
+echo ''
 echo '✅ Deployment completed!'
-REMOTE_SCRIPT
+EOF
 
 echo ""
 echo "✅ Deployment completed successfully!"
 echo ""
-echo "📋 Next steps:"
-echo "  1. View logs: ssh $VPS_REPO 'cd $VPS_PATH && docker-compose -f docker-compose.prod.yml logs -f app'"
-echo "  2. Check Dozzle logs: http://$VPS_HOST:9001"
-echo "  3. API Swagger docs: http://$VPS_HOST:9002"
-echo "  4. Database admin: http://$VPS_HOST:8080"
+echo "📋 Useful commands:"
+echo "  Logs:      ssh $VPS_REPO 'cd $VPS_PATH && docker compose --env-file .env -f docker-compose.prod.yml logs -f tegaai-app'"
+echo "  Dozzle:    http://$VPS_HOST:9001"
+echo "  Swagger:   http://$VPS_HOST:9002"
+echo "  Adminer:   http://$VPS_HOST:9003"
 echo ""
 echo "⚡ Health check:"
-echo "   curl -i http://$VPS_HOST/api/health"
+echo "   curl -i http://$VPS_HOST/health"
 echo ""
 echo "🎉 All done!"
