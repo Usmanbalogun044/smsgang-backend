@@ -21,14 +21,33 @@ on:
           - staging
 
 jobs:
-  deploy:
+  # ─── Stage 1: Checkout ───────────────────────────────────────────────
+  checkout:
+    name: 📥 Stage 1 — Checkout Code
     runs-on: ubuntu-latest
-    environment:
-      name: ${{ github.event.inputs.environment || 'production' }}
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
+      - name: Upload source
+        uses: actions/upload-artifact@v3
+        with:
+          name: source-code
+          path: .
+
+  # ─── Stage 2: Build & Push Docker Image ──────────────────────────────
+  build:
+    name: 🐳 Stage 2 — Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: checkout
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      owner: ${{ steps.owner.outputs.name }}
+    steps:
+      - name: Download source
+        uses: actions/download-artifact@v3
+        with:
+          name: source-code
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
@@ -36,6 +55,10 @@ jobs:
       - name: Convert owner to lowercase
         id: owner
         run: echo "name=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Set image tag output
+        id: meta
+        run: echo "image_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v2
@@ -55,20 +78,66 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # ─── Stage 3: Deploy to VPS ──────────────────────────────────────────
+  deploy:
+    name: 🚀 Stage 3 — Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - name: Download source
+        uses: actions/download-artifact@v3
+        with:
+          name: source-code
+
+      - name: Setup SSH
+        env:
+          PRIVATE_KEY: ${{ secrets.VPS_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+          ssh-keygen -y -f ~/.ssh/id_rsa > /dev/null || { echo "❌ Invalid SSH key"; exit 1; }
+
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+          cat >> ~/.ssh/config <<EOF
+          Host $VPS_HOST
+            StrictHostKeyChecking yes
+            IdentityFile ~/.ssh/id_rsa
+            IdentitiesOnly yes
+          EOF
+          chmod 600 ~/.ssh/config
+
       - name: Deploy to VPS
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_PATH: ${{ secrets.VPS_PATH }}
-          PRIVATE_KEY: ${{ secrets.VPS_PRIVATE_KEY }}
         run: |
-          mkdir -p ~/.ssh
-          echo "$PRIVATE_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
           bash deploy.sh
 
-      - name: Health Check
+  # ─── Stage 4: Health Check ────────────────────────────────────────────
+  healthcheck:
+    name: ✅ Stage 4 — Health Check
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - name: Wait for service to stabilize
+        run: sleep 10
+
+      - name: Run health check
         run: |
-          sleep 10
-          curl -f http://${{ secrets.VPS_HOST }}/api/health || exit 1
+          echo "🔍 Checking health at http://${{ secrets.VPS_HOST }}/api/health"
+          for i in 1 2 3; do
+            curl -f http://${{ secrets.VPS_HOST }}/api/health && echo "✅ Health check passed" && exit 0
+            echo "⏳ Attempt $i failed, retrying in 5s..."
+            sleep 5
+          done
+          echo "❌ Health check failed after 3 attempts"
+          exit 1
