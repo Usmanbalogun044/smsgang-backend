@@ -16,7 +16,7 @@ services:
       start_period: 10s
 
   smsgang-app:
-    image: "${DOCKER_IMAGE:-usmanbalogun044/smsgang-backend}:${DOCKER_TAG:-latest}"
+    image: "${DOCKER_USERNAME:?DOCKER_USERNAME is required}usmanbalogun044/smsgang-backend:${DOCKER_TAG:-latest}"
     container_name: smsgang-app-prod
     restart: always
     working_dir: /var/www/html
