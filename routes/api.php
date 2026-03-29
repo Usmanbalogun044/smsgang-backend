@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\Admin\AdminTransactionController;
 use App\Http\Controllers\Api\Admin\AdminUserController;
 use App\Http\Controllers\Api\Admin\WithdrawalController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\LendoverifyWebhookController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\ServiceController;
@@ -22,6 +23,9 @@ use App\Http\Controllers\Api\SmmServiceController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\WalletController;
 use Illuminate\Support\Facades\Route;
+
+// Health check endpoint (no auth, no throttling)
+Route::get('/health', [HealthController::class, 'check']);
 
 // Public auth routes
 Route::middleware('throttle:auth')->group(function () {

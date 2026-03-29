@@ -14,7 +14,7 @@ services:
       - PHP_POST_MAX_SIZE=100M
       - PHP_UPLOAD_MAX_FILESIZE=100M
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      test: ["CMD", "curl", "-f", "http://localhost/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
