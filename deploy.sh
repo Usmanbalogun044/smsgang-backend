@@ -43,6 +43,7 @@ echo "📤 Step 2: Uploading configuration..."
 scp "$COMPOSE_FILE" "$VPS_REPO:$VPS_PATH/docker-compose.prod.yml"
 scp openapi.yml "$VPS_REPO:$VPS_PATH/openapi.yml"
 scp server/default-production.conf "$VPS_REPO:$VPS_PATH/server/default-production.conf"
+scp .env.production "$VPS_REPO:$VPS_PATH/.env.deploy-template" 2>/dev/null || true
 echo "✅ Configuration uploaded"
 echo ""
 
@@ -69,6 +70,34 @@ cd "$VPS_PATH"
 [ -f openapi.yml ] || { echo '❌ Missing openapi.yml on VPS'; exit 1; }
 [ -f docker-compose.prod.yml ] || { echo '❌ Missing docker-compose.prod.yml on VPS'; exit 1; }
 [ -f server/default-production.conf ] || { echo '❌ Missing server/default-production.conf on VPS'; exit 1; }
+
+DB_HOST_CURRENT=$(grep -E '^DB_HOST=' .env | tail -n1 | cut -d= -f2- || true)
+if [ "$DB_HOST_CURRENT" = "smsgangdatabase" ]; then
+    echo '⚠️  Legacy DB_HOST detected in VPS .env (smsgangdatabase). Updating from .env.deploy-template...'
+    [ -f .env.deploy-template ] || { echo '❌ Missing .env.deploy-template; cannot auto-fix DB settings'; exit 1; }
+
+    upsert_env_var() {
+        key="$1"
+        value="$2"
+        escaped_value=$(printf '%s' "$value" | sed 's/[&|]/\\&/g')
+        if grep -q "^${key}=" .env; then
+            sed -i "s|^${key}=.*|${key}=${escaped_value}|" .env
+        else
+            echo "${key}=${value}" >> .env
+        fi
+    }
+
+    for key in DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD; do
+        val=$(grep -E "^${key}=" .env.deploy-template | tail -n1 | cut -d= -f2- || true)
+        [ -n "$val" ] && upsert_env_var "$key" "$val"
+    done
+
+    echo '✅ DB settings updated from .env.deploy-template'
+fi
+
+DB_HOST_EFFECTIVE=$(grep -E '^DB_HOST=' .env | tail -n1 | cut -d= -f2- || true)
+[ -n "$DB_HOST_EFFECTIVE" ] || { echo '❌ DB_HOST missing in .env'; exit 1; }
+echo "ℹ️  Using DB_HOST=$DB_HOST_EFFECTIVE"
 
 echo '📋 Rendered image values:'
 docker-compose -f docker-compose.prod.yml config | grep -E 'image:' || true

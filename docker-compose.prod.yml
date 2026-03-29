@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   app:
     image: ${DOCKER_REGISTRY:-ghcr.io}/${DOCKER_IMAGE:-usmanbalogun044/smsgang-backend}:${DOCKER_TAG:-latest}
