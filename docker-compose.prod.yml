@@ -15,6 +15,12 @@ services:
       - CONTAINER_ROLE=app
       - PHP_POST_MAX_SIZE=100M
       - PHP_UPLOAD_MAX_FILESIZE=100M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - app_smsgang
 

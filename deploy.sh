@@ -55,24 +55,40 @@ echo "🚀 Step 4: Deploying containers..."
 ssh "$VPS_REPO" "
     set -e
     cd $VPS_PATH
+    export DOCKER_REGISTRY=$DOCKER_REGISTRY
+    export DOCKER_IMAGE=$DOCKER_IMAGE
+    export DOCKER_TAG=$DOCKER_TAG
+
+    echo '  → Rendering compose image values...'
+    docker-compose -f docker-compose.prod.yml config | grep -E 'image:' || true
     echo '  → Checking DNS resolution...'
     nslookup ghcr.io > /dev/null || { echo '     ⚠️  DNS unstable, retrying...'; sleep 2; nslookup ghcr.io > /dev/null || true; }
     echo '  → Pulling images...'
-    DOCKER_REGISTRY=$DOCKER_REGISTRY DOCKER_IMAGE=$DOCKER_IMAGE DOCKER_TAG=$DOCKER_TAG \
-        docker-compose -f docker-compose.prod.yml pull
+    docker-compose -f docker-compose.prod.yml pull
 
     echo '  → Stopping containers...'
     docker-compose -f docker-compose.prod.yml down --remove-orphans || true
 
-    echo '  → Starting containers...'
-    DOCKER_REGISTRY=$DOCKER_REGISTRY DOCKER_IMAGE=$DOCKER_IMAGE DOCKER_TAG=$DOCKER_TAG \
-        docker-compose -f docker-compose.prod.yml up -d --scale app=1
+    echo '  → Starting app first...'
+    docker-compose -f docker-compose.prod.yml up -d --scale app=1 app
+
+    echo '  → Waiting for app to be running...'
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        docker-compose -f docker-compose.prod.yml ps --services --status running | grep -q '^app$' && break
+        echo "     app not running yet (attempt $i/12)"
+        sleep 5
+    done
+
+    docker-compose -f docker-compose.prod.yml ps --services --status running | grep -q '^app$' || { echo '❌ app service failed to start'; exit 1; }
+
+    echo '  → Starting remaining services...'
+    docker-compose -f docker-compose.prod.yml up -d
 
     echo '  → Waiting for services...'
     sleep 10
 
     echo '  → Running migrations...'
-    docker-compose -f docker-compose.prod.yml exec -T app php artisan migrate --force 2>/dev/null || echo '     (may be already applied)'
+    docker-compose -f docker-compose.prod.yml exec -T app php artisan migrate --force
 
     echo '  → Optimizing cache...'
     docker-compose -f docker-compose.prod.yml exec -T app php artisan optimize 2>/dev/null || true
