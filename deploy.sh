@@ -33,7 +33,7 @@ DOCKER_REGISTRY="${DOCKER_REGISTRY:-docker.io}"
 DOCKER_IMAGE="${DOCKER_IMAGE:-smsgang-backend}"
 DOCKER_TAG="${DOCKER_TAG:-latest}"
 CERTBOT_DOMAIN="${CERTBOT_DOMAIN:-api.smsgang.org}"
-CERTBOT_EMAIL="${CERTBOT_EMAIL:-noreusmanbalogun044@gmail.com}"
+CERTBOT_EMAIL="${CERTBOT_EMAIL:-usmanbalogun044@gmail.com}"
 
 VPS_REPO="${VPS_USER}@${VPS_HOST}"
 
@@ -65,6 +65,7 @@ echo ""
 # Step 4: Deploy via docker-compose
 echo "🚀 Step 4: Deploying to VPS..."
 DOCKER_USERNAME_VAR="$DOCKER_USERNAME"
+DOCKER_IMAGE_VAR="$DOCKER_IMAGE"
 DOCKER_TAG_VAR="$DOCKER_TAG"
 VPS_PATH_VAR="$VPS_PATH"
 CERTBOT_DOMAIN_VAR="$CERTBOT_DOMAIN"
@@ -75,6 +76,7 @@ set -e
 cd "$VPS_PATH_VAR"
 
 export DOCKER_USERNAME="$DOCKER_USERNAME_VAR"
+export DOCKER_IMAGE="$DOCKER_IMAGE_VAR"
 export DOCKER_TAG="$DOCKER_TAG_VAR"
 export CERTBOT_DOMAIN="$CERTBOT_DOMAIN_VAR"
 export CERTBOT_EMAIL="$CERTBOT_EMAIL_VAR"
@@ -112,10 +114,14 @@ sleep 15
 echo '🔐 Generating SSL certificates with certbot...'
 if [ ! -f /data/certbot/letsencrypt/live/$CERTBOT_DOMAIN/fullchain.pem ]; then
   echo '   First-time certificate generation...'
-  docker compose --env-file .env -f docker-compose.prod.yml run --rm --entrypoint /bin/sh smsgang-certbot -c "certbot certonly --webroot -w /var/www/certbot --email '$CERTBOT_EMAIL' -d $CERTBOT_DOMAIN --agree-tos --non-interactive" || echo '⚠️  Cert generation in progress or skipped'
-  sleep 5
-  docker compose --env-file .env -f docker-compose.prod.yml restart smsgang-app
-  sleep 3
+  if docker compose --env-file .env -f docker-compose.prod.yml run --rm --entrypoint /bin/sh smsgang-certbot -c "certbot certonly --webroot -w /var/www/certbot --email '$CERTBOT_EMAIL' -d $CERTBOT_DOMAIN --agree-tos --non-interactive"; then
+    echo '✅ Certificate generated successfully; restarting app to reload certs'
+    sleep 5
+    docker compose --env-file .env -f docker-compose.prod.yml restart smsgang-app
+    sleep 3
+  else
+    echo '⚠️  Certificate generation failed/skipped; continuing without app restart'
+  fi
 else
   echo '   Certificates already exist, skipping generation'
 fi
