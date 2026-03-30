@@ -17,8 +17,6 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin' => \App\Http\Middleware\EnsureIsAdmin::class,
             'active' => \App\Http\Middleware\EnsureIsActive::class,
         ]);
-
-        $middleware->statefulApi();
     })
     ->withSchedule(function (Schedule $schedule) {
         // All schedule definitions are in routes/console.php
