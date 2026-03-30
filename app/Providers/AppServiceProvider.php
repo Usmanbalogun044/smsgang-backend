@@ -23,7 +23,15 @@ class AppServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('auth', function (Request $request) {
-            return Limit::perMinute(5)->by($request->ip());
+            return Limit::perMinute(4)->by(strtolower($request->input('email', '')).'|'.$request->ip());
+        });
+
+        RateLimiter::for('otp-verify', function (Request $request) {
+            return Limit::perMinute(6)->by(strtolower($request->input('email', '')).'|'.$request->ip());
+        });
+
+        RateLimiter::for('otp-resend', function (Request $request) {
+            return Limit::perMinutes(10, 3)->by(strtolower($request->input('email', '')).'|'.$request->ip());
         });
 
         RateLimiter::for('buy', function (Request $request) {
