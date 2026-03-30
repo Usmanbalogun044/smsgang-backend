@@ -83,7 +83,7 @@ class ServiceController extends Controller
                             return null;
                         }
 
-                        $operatorData = [
+                        $operator = [
                             'name' => (string) $operatorName,
                             'cost' => $cost,
                             'count' => $count,
@@ -94,58 +94,20 @@ class ServiceController extends Controller
                             ),
                         ];
 
-                        // Include success_rates if available from provider
-                        if (isset($info['success_rates']) && is_array($info['success_rates'])) {
-                            $operatorData['success_rates'] = array_map(
-                                fn ($rate) => (float) $rate,
-                                $info['success_rates']
-                            );
+                        // Extract success rates from 5SIM API response
+                        if (isset($info['rate'])) {
+                            $operator['success_rates'] = [
+                                'instant' => (float) ($info['rate'] ?? 0),
+                                '1h' => (float) ($info['rate1'] ?? 0),
+                                '3h' => (float) ($info['rate3'] ?? 0),
+                                '24h' => (float) ($info['rate24'] ?? 0),
+                                '72h' => (float) ($info['rate72'] ?? 0),
+                                '168h' => (float) ($info['rate168'] ?? 0),
+                                '30d' => (float) ($info['rate720'] ?? 0),
+                            ];
                         }
 
-                        // Include rating (overall quality score)
-                        if (isset($info['rating'])) {
-                            $operatorData['rating'] = is_numeric($info['rating']) ? (float) $info['rating'] : null;
-                        }
-
-                        // Include activation speed
-                        if (isset($info['activation_speed'])) {
-                            $operatorData['activation_speed'] = is_numeric($info['activation_speed']) ? (int) $info['activation_speed'] : null;
-                        }
-
-                        // Include average response time (in seconds)
-                        if (isset($info['response_time'])) {
-                            $operatorData['response_time'] = is_numeric($info['response_time']) ? (int) $info['response_time'] : null;
-                        }
-
-                        // Include uptime percentage
-                        if (isset($info['uptime'])) {
-                            $operatorData['uptime'] = is_numeric($info['uptime']) ? (float) $info['uptime'] : null;
-                        }
-
-                        // Include customer reviews/feedback count
-                        if (isset($info['reviews'])) {
-                            $operatorData['reviews'] = is_numeric($info['reviews']) ? (int) $info['reviews'] : null;
-                        }
-
-                        // Include support availability
-                        if (isset($info['support_availability'])) {
-                            $operatorData['support_availability'] = (string) $info['support_availability'];
-                        }
-
-                        // Include refund policy
-                        if (isset($info['refund_policy'])) {
-                            $operatorData['refund_policy'] = (string) $info['refund_policy'];
-                        }
-
-                        // Include any additional provider fields that might be useful
-                        $additionalFields = ['avg_delivery_time', 'sms_speed', 'reliability_score', 'last_update', 'region', 'operator_status'];
-                        foreach ($additionalFields as $field) {
-                            if (isset($info[$field])) {
-                                $operatorData[$field] = $info[$field];
-                            }
-                        }
-
-                        return $operatorData;
+                        return $operator;
                     })
                     ->filter()
                     ->sortBy('cost')
