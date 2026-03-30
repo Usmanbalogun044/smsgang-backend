@@ -56,7 +56,7 @@ RUN chmod +x /usr/local/bin/start-container
 # Copy application files
 COPY . .
 
-# Ensure Laravel writable/cache directories exist before composer scripts run.
+# Ensure Laravel writable/cache directories exist
 RUN mkdir -p /var/www/html/bootstrap/cache \
     /var/www/html/storage/framework/cache \
     /var/www/html/storage/framework/sessions \
@@ -67,17 +67,14 @@ RUN mkdir -p /var/www/html/bootstrap/cache \
 # Install dependencies
 RUN composer install --no-ansi --no-dev --no-interaction --no-progress --optimize-autoloader
 
-# Clear all caches and rebuild provider cache during build
-RUN php artisan optimize:clear || true && \
-    php artisan config:cache && \
-    php artisan route:cache
+# ✅ NO artisan commands here — they run at container startup via start-container
+# where the real .env with DB/Redis credentials is available
 
 RUN chown -R root:root /var/www/html/storage \
     && chmod -R 775 /var/www/html/storage \
     && touch /var/www/html/storage/logs/laravel.log \
     && chmod 664 /var/www/html/storage/logs/laravel.log
 
-# Allow logging and caching
 RUN chmod -R 777 storage
 RUN chmod -R 777 bootstrap
 
