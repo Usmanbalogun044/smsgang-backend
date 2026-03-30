@@ -20,6 +20,8 @@ services:
     container_name: smsgang-app-prod
     restart: always
     working_dir: /var/www/html
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Stable way to reach VPS host MySQL
     environment:
       APP_KEY: ${APP_KEY:?APP_KEY is required}
       APP_ENV: production
@@ -28,7 +30,7 @@ services:
 
       # ── MySQL (running on VPS host, outside Docker) ──────────────────
       DB_CONNECTION: mysql
-      DB_HOST: ${DB_HOST:-157.173.127.226}
+      DB_HOST: ${DB_HOST:-host.docker.internal}
       DB_PORT: ${DB_PORT:-3306}
       DB_DATABASE: ${DB_DATABASE:-smsgang_db}
       DB_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
@@ -47,7 +49,7 @@ services:
       SESSION_DOMAIN: .smsgang.org
       SESSION_SECURE_COOKIE: "true"
       SESSION_SAME_SITE: "none"
-      SANCTUM_STATEFUL_DOMAINS: smsgang.org,www.smsgang.org
+      SANCTUM_STATEFUL_DOMAINS: smsgang.org,admin.smsgang.org
       CORS_ALLOWED_ORIGINS: https://smsgang.org,https://www.smsgang.org
       CORS_SUPPORTS_CREDENTIALS: "true"
     env_file:
@@ -59,18 +61,14 @@ services:
       - ./.env:/var/www/html/.env:ro
       - /data/certbot/letsencrypt/:/etc/letsencrypt/:ro
       - /data/certbot/www/:/var/www/html/public/.well-known/acme-challenge/:ro
-      # ✅ Named volumes instead of host bind mounts
-      # This stops empty host folders wiping container storage
       - smsgang_storage_logs:/var/www/html/storage/logs
       - smsgang_storage_app:/var/www/html/storage/app
-      # ✅ bootstrap/cache removed — lives inside container
     depends_on:
       smsgang-redis:
         condition: service_healthy
     networks:
       - smsgang
     healthcheck:
-      # ✅ Fixed: was /health, now /api/health
       test: ["CMD", "curl", "-f", "http://localhost/api/health"]
       interval: 30s
       timeout: 10s
@@ -120,8 +118,10 @@ services:
     restart: always
     ports:
       - "9003:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      ADMINER_DEFAULT_SERVER: 157.173.127.226
+      ADMINER_DEFAULT_SERVER: host.docker.internal
     networks:
       - smsgang
     depends_on:
@@ -133,5 +133,5 @@ networks:
 
 volumes:
   redis_data:
-  smsgang_storage_logs:  # Laravel logs — persists across deploys
-  smsgang_storage_app:   # Uploaded files — persists across deploys
+  smsgang_storage_logs:
+  smsgang_storage_app:
