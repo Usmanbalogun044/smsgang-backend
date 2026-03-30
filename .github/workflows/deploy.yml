@@ -74,7 +74,6 @@ jobs:
           key: ${{ secrets.VPS_PRIVATE_KEY }}
           script: |
             mkdir -p ${{ secrets.VPS_PATH }}/docker
-            # Fix historical conflict where openapi.yml became a directory
             if [ -d "${{ secrets.VPS_PATH }}/openapi.yml" ]; then
               rm -rf "${{ secrets.VPS_PATH }}/openapi.yml"
             fi
@@ -90,7 +89,7 @@ jobs:
           overwrite: true
           rm: false
 
-      - name: Rename .env.production to .env on VPS
+      - name: Setup .env on VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -99,10 +98,16 @@ jobs:
           script: |
             cd ${{ secrets.VPS_PATH }}
             [ -f .env.production ] && mv .env.production .env
-            # Normalize Windows line endings
             sed -i 's/\r$//' .env
+            # Always inject correct Docker vars
+            grep -q '^DOCKER_USERNAME=' .env \
+              && sed -i "s|^DOCKER_USERNAME=.*|DOCKER_USERNAME=${{ secrets.DOCKER_USERNAME }}|" .env \
+              || echo "DOCKER_USERNAME=${{ secrets.DOCKER_USERNAME }}" >> .env
+            grep -q '^DOCKER_TAG=' .env \
+              && sed -i "s|^DOCKER_TAG=.*|DOCKER_TAG=${{ github.sha }}|" .env \
+              || echo "DOCKER_TAG=${{ github.sha }}" >> .env
             grep -q '^APP_KEY=' .env || { echo '❌ APP_KEY missing in .env'; exit 1; }
-            ls -la | grep -E "\.env|openapi|docker-compose"
+            echo "✅ .env ready"
 
       - name: Login to Docker Hub on VPS
         uses: appleboy/ssh-action@v1.0.3
@@ -120,7 +125,6 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_PRIVATE_KEY }}
-          envs: DOCKER_USERNAME,DOCKER_TAG
           script: |
             cd ${{ secrets.VPS_PATH }}
 
@@ -132,6 +136,16 @@ jobs:
 
             echo "🚀 Restarting services..."
             docker compose --env-file .env -f docker-compose.prod.yml up -d --remove-orphans
+
+            echo "⏳ Waiting for app to boot..."
+            sleep 15
+
+            echo "🗄️ Running migrations..."
+            docker compose --env-file .env -f docker-compose.prod.yml exec -T smsgang-app php artisan migrate --force
+
+            echo "⚙️ Caching config and routes..."
+            docker compose --env-file .env -f docker-compose.prod.yml exec -T smsgang-app php artisan config:cache
+            docker compose --env-file .env -f docker-compose.prod.yml exec -T smsgang-app php artisan route:cache
 
             echo "🧹 Cleaning up old images..."
             docker image prune -f
@@ -146,8 +160,6 @@ jobs:
           echo "🔍 Checking smsgang-app container..."
           ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
             "cd ${{ secrets.VPS_PATH }} && \
-             DOCKER_USERNAME=${{ secrets.DOCKER_USERNAME }} \
-             DOCKER_TAG=${{ github.sha }} \
              docker compose --env-file .env -f docker-compose.prod.yml ps --services --status running | grep -q '^smsgang-app$'" \
             && echo "✅ smsgang-app is running" || { echo "❌ smsgang-app is not running"; exit 1; }
 
@@ -165,4 +177,4 @@ jobs:
           echo ""
           echo "To debug, SSH into VPS and run:"
           echo "  cd ${{ secrets.VPS_PATH }}"
-          echo "  docker compose -f docker-compose.prod.yml logs --tail=100"
+          echo "  docker compose --env-file .env -f docker-compose.prod.yml logs --tail=100"
