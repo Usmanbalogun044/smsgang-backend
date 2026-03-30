@@ -35,7 +35,7 @@ class AuthController extends Controller
         Cache::put($this->otpCacheKey($email), $otp, now()->addMinutes(self::OTP_TTL_MINUTES));
 
         try {
-            Mail::to($email)->send(new EmailVerificationOtpMail($otp, self::OTP_TTL_MINUTES));
+            Mail::to($email)->queue(new EmailVerificationOtpMail($otp, self::OTP_TTL_MINUTES));
         } catch (Throwable $exception) {
             Log::error('Failed to send verification OTP email', [
                 'email' => $email,
