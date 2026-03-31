@@ -15,13 +15,25 @@ use App\Models\ServicePrice;
 use App\Models\User;
 use App\Services\SmsProviders\ProviderInterface;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class ActivationService
 {
+    private ?bool $activationProviderOperatorColumnExists = null;
+
     public function __construct(
         private ProviderInterface $provider,
         private PricingService $pricingService,
     ) {}
+
+    private function hasActivationProviderOperatorColumn(): bool
+    {
+        if ($this->activationProviderOperatorColumnExists === null) {
+            $this->activationProviderOperatorColumnExists = Schema::hasColumn('activations', 'provider_operator');
+        }
+
+        return $this->activationProviderOperatorColumnExists;
+    }
 
     public function initiatePurchase(User $user, Service $service, Country $country, string $operator): Order
     {
@@ -154,17 +166,22 @@ class ActivationService
                 );
             }
 
-            $activation = Activation::create([
+            $activationPayload = [
                 'order_id' => $order->id,
                 'service_id' => $order->service_id,
                 'country_id' => $order->country_id,
                 'provider' => '5sim',
-                'provider_operator' => $result['operator'] ?? null,
                 'provider_activation_id' => $result['id'],
                 'phone_number' => $result['phone'],
                 'status' => ActivationStatus::NumberReceived,
                 'expires_at' => now()->addMinutes(15),
-            ]);
+            ];
+
+            if ($this->hasActivationProviderOperatorColumn()) {
+                $activationPayload['provider_operator'] = $result['operator'] ?? null;
+            }
+
+            $activation = Activation::create($activationPayload);
 
             $order->update(['status' => OrderStatus::Completed]);
 
