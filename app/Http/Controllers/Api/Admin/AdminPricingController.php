@@ -81,9 +81,6 @@ class AdminPricingController extends Controller
 
         try {
             Log::info('Admin triggered manual SyncAllPricingJob from Dashboard.');
-            
-            // Set cache to prevent double clicks
-            Cache::put('sync_in_progress', true, 1800); 
 
             // Dispatch the job
             SyncAllPricingJob::dispatch();
@@ -94,7 +91,6 @@ class AdminPricingController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            Cache::forget('sync_in_progress');
             Log::error('Failed to dispatch Sync job: ' . $e->getMessage());
             return response()->json(['message' => 'Failed to start sync: ' . $e->getMessage()], 500);
         }
