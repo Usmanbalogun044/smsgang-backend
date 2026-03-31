@@ -89,7 +89,7 @@ class ActivationController extends Controller
             $debitTx = $this->walletService->deductFunds(
                 $user,
                 $price,
-                "order_{$order->id}",
+                "SMS_ORDER_{$order->id}",
                 "SMS activation for {$service->name} ({$country->name})"
             );
 
@@ -103,6 +103,11 @@ class ActivationController extends Controller
                 ], 422);
             }
 
+            // Link ledger transaction back to this order for admin tracing.
+            if (! $debitTx->order_id) {
+                $debitTx->update(['order_id' => $order->id]);
+            }
+
             try {
                 $this->activationService->processAfterPayment($order);
             } catch (Throwable $provisionError) {
@@ -110,7 +115,7 @@ class ActivationController extends Controller
                 $this->walletService->refundFunds(
                     $user,
                     $price,
-                    "refund_order_{$order->id}",
+                    "SMS_REFUND_ORDER_{$order->id}",
                     "Refund for failed SMS activation order #{$order->id}"
                 );
 

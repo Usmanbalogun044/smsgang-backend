@@ -169,7 +169,7 @@ class SmmOrderController extends Controller
             $debitTx = $this->walletService->deductFunds(
                 $user,
                 $priceData['total_price'],
-                "smm_order_{$order->id}",
+                "SMM_ORDER_{$order->id}",
                 "SMM service purchase - {$service->name}"
             );
 
@@ -183,6 +183,11 @@ class SmmOrderController extends Controller
                     'message' => 'Insufficient wallet balance.',
                     'error' => 'insufficient_balance',
                 ], 422);
+            }
+
+            // Link ledger transaction back to this SMM order for admin tracing.
+            if (! $debitTx->smm_order_id) {
+                $debitTx->update(['smm_order_id' => $order->id]);
             }
 
             $this->telegramService->sendTransactionNotification(
@@ -214,12 +219,16 @@ class SmmOrderController extends Controller
                 ]);
 
                 // STEP 4A: REFUND THE USER IMMEDIATELY
-                $this->walletService->refundFunds(
+                $refundTx = $this->walletService->refundFunds(
                     $user,
                     $finalPriceNgn,
-                    "smm_order_{$order->id}_refund",
+                    "SMM_REFUND_ORDER_{$order->id}",
                     "Refund: SMM order failed at provider - Order #{$order->id}"
                 );
+
+                if (! $refundTx->smm_order_id) {
+                    $refundTx->update(['smm_order_id' => $order->id]);
+                }
 
                 $this->telegramService->sendTransactionNotification(
                     $user,

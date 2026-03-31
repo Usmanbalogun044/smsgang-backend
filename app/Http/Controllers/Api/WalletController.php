@@ -72,6 +72,7 @@ class WalletController extends Controller
                     'gateway' => 'lendoverify',
                     'amount' => $amount,
                     'currency' => 'NGN',
+                    'type' => 'credit',
                     'status' => 'pending',  // Monitoring status
                     'description' => 'Wallet funding - awaiting payment',
                     'ip_address' => request()->ip(),

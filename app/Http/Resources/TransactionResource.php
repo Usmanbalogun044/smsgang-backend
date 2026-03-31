@@ -11,6 +11,8 @@ class TransactionResource extends JsonResource
     {
         return [
             'id'                => $this->id,
+            'type'              => $this->type,
+            'operation_type'    => $this->operation_type,
             'reference'         => $this->reference,
             'gateway'           => $this->gateway,
             'gateway_reference' => $this->gateway_reference,
@@ -20,6 +22,7 @@ class TransactionResource extends JsonResource
             'description'       => $this->description,
             'verified_at'       => $this->verified_at,
             'order_id'          => $this->order_id,
+            'smm_order_id'      => $this->smm_order_id,
             // Admin only: expose user and raw gateway response
             'user'              => $this->when(
                 $request->user()?->role?->value === 'admin',
