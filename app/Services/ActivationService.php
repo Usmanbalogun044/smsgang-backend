@@ -194,7 +194,7 @@ class ActivationService
 
             return null;
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Error checking SMS', [
+        Log::error('Error checking SMS', [
                 'activation_id' => $activation->id,
                 'provider_activation_id' => $activation->provider_activation_id,
                 'error' => $e->getMessage(),
