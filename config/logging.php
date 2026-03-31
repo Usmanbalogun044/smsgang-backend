@@ -74,12 +74,12 @@ return [
         ],
 
         'activity' => [
-            'driver' => 'stack',
-            'channels' => array_merge(
-                explode(',', (string) env('LOG_STACK', 'single')),
-                env('DISCORD_WEBHOOK_URL') ? ['discord'] : []
-            ),
-            'ignore_exceptions' => true,
+            'driver' => 'monolog',
+            'handler' => \App\Logging\Handlers\DiscordHandler::class,
+            'level' => env('LOG_LEVEL', 'info'),
+            'handler_with' => [
+                'webhookUrl' => env('DISCORD_WEBHOOK_URL'),
+            ],
         ],
 
         'slack' => [
@@ -138,7 +138,7 @@ return [
 
         'discord' => [
             'driver' => 'monolog',
-            'level' => env('LOG_DISCORD_LEVEL', 'error'),
+            'level' => env('LOG_LEVEL', 'info'),
             'handler' => \App\Logging\Handlers\DiscordHandler::class,
             'handler_with' => [
                 'webhookUrl' => env('DISCORD_WEBHOOK_URL'),

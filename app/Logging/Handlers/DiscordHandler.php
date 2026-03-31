@@ -3,6 +3,7 @@
 namespace App\Logging\Handlers;
 
 use Monolog\Handler\AbstractProcessingHandler;
+use Monolog\Level;
 use Monolog\LogRecord;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log as LaravelLog;
@@ -11,8 +12,13 @@ class DiscordHandler extends AbstractProcessingHandler
 {
     private string $webhookUrl;
 
-    public function __construct(string $webhookUrl, int $level = 250)
+    public function __construct(string $webhookUrl, $level = Level::Info)
     {
+        // Convert string level to Monolog Level if needed
+        if (is_string($level)) {
+            $level = Level::fromName(strtoupper($level));
+        }
+        
         parent::__construct($level);
         $this->webhookUrl = $webhookUrl;
     }
@@ -24,16 +30,18 @@ class DiscordHandler extends AbstractProcessingHandler
     {
         try {
             if (empty($this->webhookUrl)) {
+                error_log('Discord webhook URL is empty');
                 return;
             }
 
             $payload = $this->formatForDiscord($record);
 
-            Http::timeout(5)
-                ->retry(1, 100)
+            Http::timeout(15)
+                ->connectTimeout(10)
+                ->retry(2, 500)
                 ->post($this->webhookUrl, $payload);
         } catch (\Exception $e) {
-            error_log('Discord logging failed: ' . $e->getMessage());
+            error_log('Discord logging failed: ' . $e->getMessage() . ' | Webhook: ' . substr($this->webhookUrl, 0, 50));
         }
     }
 
@@ -101,7 +109,7 @@ class DiscordHandler extends AbstractProcessingHandler
             'title' => $title,
             'description' => !empty($record->message) ? $record->message : 'Log entry',
             'color' => $color,
-            'timestamp' => $record->datetime->toIso8601String(),
+            'timestamp' => $record->datetime->format('c'),
             'footer' => [
                 'text' => 'SMS Gang Monitoring',
             ],
