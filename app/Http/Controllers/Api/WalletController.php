@@ -11,16 +11,28 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
 class WalletController extends Controller
 {
+    private ?bool $transactionOperationTypeColumnExists = null;
+
     public function __construct(
         private WalletService $walletService,
         private LendoverifyService $lendoverify,
         private TelegramNotificationService $telegramService,
     ) {}
+
+    private function hasTransactionOperationTypeColumn(): bool
+    {
+        if ($this->transactionOperationTypeColumnExists === null) {
+            $this->transactionOperationTypeColumnExists = Schema::hasColumn('transactions', 'operation_type');
+        }
+
+        return $this->transactionOperationTypeColumnExists;
+    }
 
     /**
      * Get user's wallet balance
@@ -54,7 +66,7 @@ class WalletController extends Controller
 
             return DB::transaction(function () use ($user, $amount, $reference) {
                 // STEP 1: Create transaction with 'pending' status FIRST (monitoring mode)
-                $transaction = Transaction::create([
+                $payload = [
                     'user_id' => $user->id,
                     'reference' => $reference,
                     'gateway' => 'lendoverify',
@@ -62,10 +74,15 @@ class WalletController extends Controller
                     'currency' => 'NGN',
                     'status' => 'pending',  // Monitoring status
                     'description' => 'Wallet funding - awaiting payment',
-                    'operation_type' => 'wallet_fund',
                     'ip_address' => request()->ip(),
                     'user_agent' => request()->userAgent(),
-                ]);
+                ];
+
+                if ($this->hasTransactionOperationTypeColumn()) {
+                    $payload['operation_type'] = 'wallet_fund';
+                }
+
+                $transaction = Transaction::create($payload);
 
                 Log::channel('activity')->info('Wallet fund transaction created', [
                     'user_id' => $user->id,

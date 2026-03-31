@@ -10,13 +10,25 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 class LendoverifyWebhookController extends Controller
 {
+    private ?bool $transactionOperationTypeColumnExists = null;
+
     public function __construct(
         private WalletService $walletService,
     ) {}
+
+    private function hasTransactionOperationTypeColumn(): bool
+    {
+        if ($this->transactionOperationTypeColumnExists === null) {
+            $this->transactionOperationTypeColumnExists = Schema::hasColumn('transactions', 'operation_type');
+        }
+
+        return $this->transactionOperationTypeColumnExists;
+    }
 
     public function handle(Request $request): JsonResponse
     {
@@ -50,10 +62,14 @@ class LendoverifyWebhookController extends Controller
         // ONLY handle wallet funding (reference starts with WALLET_)
         if (strpos($reference, 'WALLET_') === 0) {
             return DB::transaction(function () use ($reference, $request, $data) {
-                $transaction = Transaction::lockForUpdate()
-                    ->where('reference', $reference)
-                    ->where('operation_type', 'wallet_fund')
-                    ->first();
+                $transactionQuery = Transaction::lockForUpdate()
+                    ->where('reference', $reference);
+
+                if ($this->hasTransactionOperationTypeColumn()) {
+                    $transactionQuery->where('operation_type', 'wallet_fund');
+                }
+
+                $transaction = $transactionQuery->first();
 
                 if (!$transaction) {
                     Log::channel('activity')->warning('Webhook: wallet transaction not found', ['reference' => $reference]);
