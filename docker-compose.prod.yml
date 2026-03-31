@@ -45,7 +45,8 @@ services:
       SESSION_DRIVER: redis
 
       # ── App config ────────────────────────────────────────────────────
-      LOG_CHANNEL: stack
+      LOG_CHANNEL: ${LOG_CHANNEL:-discord}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       SESSION_DOMAIN: .smsgang.org
       SESSION_SECURE_COOKIE: "true"
       SESSION_SAME_SITE: "none"
