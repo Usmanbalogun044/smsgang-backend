@@ -23,6 +23,7 @@ class SyncAllPricingJob implements ShouldQueue
 
     public $timeout = 1800; // 30 minutes
     public $tries = 1;
+    public bool $failOnTimeout = true;
 
     public function __construct() {}
 

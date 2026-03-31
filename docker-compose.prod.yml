@@ -44,6 +44,7 @@ services:
       REDIS_PORT: 6379
       REDIS_CLIENT: phpredis
       QUEUE_CONNECTION: redis
+      REDIS_QUEUE_RETRY_AFTER: 1900
       CACHE_STORE: redis
       SESSION_DRIVER: redis
 
