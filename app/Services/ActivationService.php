@@ -20,7 +20,6 @@ class ActivationService
 {
     public function __construct(
         private ProviderInterface $provider,
-        private LendoverifyService $lendoverify,
         private PricingService $pricingService,
     ) {}
 
@@ -70,7 +69,7 @@ class ActivationService
             $profitAmount = 0.0;
         }
 
-        $paymentReference = 'SMS_' . uniqid();
+        $paymentReference = 'ORDER_' . uniqid();
 
         $order = Order::create([
             'user_id'           => $user->id,
@@ -87,26 +86,6 @@ class ActivationService
             'profit_amount' => $profitAmount,
             'payment_reference' => $paymentReference,
             'status'            => OrderStatus::Pending,
-        ]);
-
-        // Send the clean base URL — Lendoverify will append ?paymentReference=... itself.
-        // Do NOT add our own query params here or we'll get a double-? malformed URL.
-        $callbackUrl = rtrim((string) config('app.verify_payment_url', config('app.frontend_url', config('app.url')) . '/verify-payment'), '/');
-
-        $payment = $this->lendoverify->initializeTransaction([
-            'amount'             => (int) round($finalPrice * 100),
-            'customerEmail'      => $user->email,
-            'customerName'       => $user->name,
-            'paymentReference'   => $paymentReference,
-            'paymentDescription' => "SMS Activation: {$service->name} ({$country->name})",
-            'redirectUrl'        => $callbackUrl,
-        ]);
-
-        $data = $payment['data'] ?? $payment;
-
-        $order->update([
-            'lendoverify_checkout_url' => $data['checkout_url'] ?? $data['authorization_url'] ?? null,
-            'payment_reference' => $data['paymentReference'] ?? $paymentReference,
         ]);
 
         return $order->fresh();

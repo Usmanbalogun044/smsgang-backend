@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\BuyActivationRequest;
 use App\Http\Resources\ActivationResource;
 use App\Http\Resources\OrderResource;
+use App\Enums\OrderStatus;
 use App\Models\Activation;
 use App\Models\Country;
 use App\Models\Service;
@@ -49,7 +50,24 @@ class ActivationController extends Controller
         try {
             $service = Service::findOrFail($request->service_id);
             $country = Country::findOrFail($request->country_id);
-            $price = (float) $service->price;
+
+            // Create order first so we always use the exact calculated operator price.
+            $order = $this->activationService->initiatePurchase(
+                $user,
+                $service,
+                $country,
+                (string) $request->input('operator'),
+            );
+            $price = (float) $order->price;
+
+            if ($price <= 0) {
+                $order->update(['status' => OrderStatus::Failed]);
+
+                return response()->json([
+                    'message' => 'Selected operator price is invalid. Please choose another operator.',
+                    'error' => 'invalid_operator_price',
+                ], 422);
+            }
 
             // Get or create user's wallet
             $wallet = $user->wallet()->firstOrCreate(
@@ -68,14 +86,6 @@ class ActivationController extends Controller
                 ], 422);
             }
 
-            // Create order immediately (no payment pending state)
-            $order = $this->activationService->initiatePurchase(
-                $user,
-                $service,
-                $country,
-                (string) $request->input('operator'),
-            );
-
             $debitTx = $this->walletService->deductFunds(
                 $user,
                 $price,
@@ -91,6 +101,30 @@ class ActivationController extends Controller
                     'message' => 'Insufficient wallet balance.',
                     'error' => 'insufficient_balance',
                 ], 422);
+            }
+
+            try {
+                $this->activationService->processAfterPayment($order);
+            } catch (Throwable $provisionError) {
+                // Refund user instantly if provisioning fails after wallet debit.
+                $this->walletService->refundFunds(
+                    $user,
+                    $price,
+                    "refund_order_{$order->id}",
+                    "Refund for failed SMS activation order #{$order->id}"
+                );
+
+                Log::channel('activity')->error('SMS activation provisioning failed after wallet debit, refunded user', [
+                    'user_id' => $user->id,
+                    'order_id' => $order->id,
+                    'price' => $price,
+                    'error' => $provisionError->getMessage(),
+                ]);
+
+                return response()->json([
+                    'message' => 'Activation failed and your wallet was refunded automatically.',
+                    'error' => 'activation_failed_refunded',
+                ], 503);
             }
 
             $remainingBalance = $this->walletService->getBalance($user);

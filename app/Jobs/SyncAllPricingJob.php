@@ -22,6 +22,7 @@ class SyncAllPricingJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public $timeout = 1800; // 30 minutes
+    public $tries = 1;
 
     public function __construct() {}
 
@@ -29,6 +30,14 @@ class SyncAllPricingJob implements ShouldQueue
     {
         $startTime = microtime(true);
         $startDate = now();
+
+        if (Cache::get('sync_in_progress')) {
+            Log::channel('activity')->warning('SyncAllPricingJob skipped because a sync is already in progress', [
+                'started_at' => $startDate->toDateTimeString(),
+            ]);
+
+            return;
+        }
 
         Log::channel('activity')->info('SyncAllPricingJob started', [
             'started_at' => $startDate->toDateTimeString(),
@@ -412,8 +421,6 @@ class SyncAllPricingJob implements ShouldQueue
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
             ]);
-
-            throw $e;
         } finally {
             Cache::forget('sync_in_progress');
         }
