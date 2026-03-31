@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Transaction;
 use App\Services\WalletService;
 use App\Services\LendoverifyService;
 use App\Services\TelegramNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -50,39 +52,68 @@ class WalletController extends Controller
             // Generate unique reference
             $reference = 'WALLET_' . $user->id . '_' . uniqid();
 
-            // Keep redirect flow aligned with the existing frontend payment verification page.
-            $redirectUrl = rtrim((string) config('app.verify_payment_url', config('app.frontend_url', config('app.url')) . '/verify-payment'), '/');
+            return DB::transaction(function () use ($user, $amount, $reference) {
+                // STEP 1: Create transaction with 'pending' status FIRST (monitoring mode)
+                $transaction = Transaction::create([
+                    'user_id' => $user->id,
+                    'reference' => $reference,
+                    'gateway' => 'lendoverify',
+                    'amount' => $amount,
+                    'currency' => 'NGN',
+                    'status' => 'pending',  // Monitoring status
+                    'description' => 'Wallet funding - awaiting payment',
+                    'operation_type' => 'wallet_fund',
+                    'ip_address' => request()->ip(),
+                    'user_agent' => request()->userAgent(),
+                ]);
 
-            // Lendoverify expects this payload shape via initializeTransaction.
-            $result = $this->lendoverify->initializeTransaction([
-                'amount' => (int) round($amount * 100),
-                'customerEmail' => $user->email,
-                'customerName' => $user->name,
-                'paymentReference' => $reference,
-                'paymentDescription' => 'Wallet Funding - SMS Gang',
-                'redirectUrl' => $redirectUrl,
-            ]);
+                Log::channel('activity')->info('Wallet fund transaction created', [
+                    'user_id' => $user->id,
+                    'transaction_id' => $transaction->id,
+                    'reference' => $reference,
+                    'amount' => $amount,
+                    'status' => 'pending',
+                ]);
 
-            $data = $result['data'] ?? $result;
-            $checkoutUrl = $data['checkout_url']
-                ?? $data['authorization_url']
-                ?? $data['authorizationUrl']
-                ?? null;
+                // STEP 2: Initialize payment with Lendoverify
+                $redirectUrl = rtrim((string) config('app.verify_payment_url', config('app.frontend_url', config('app.url')) . '/verify-payment'), '/');
 
-            return response()->json([
-                'message' => 'Wallet funding initiated. Please complete payment.',
-                'checkout_url' => $checkoutUrl,
-                'amount' => $amount,
-                'currency' => 'NGN',
-                'reference' => $reference,
-                'fund_id' => $reference,
-            ], 201);
+                $result = $this->lendoverify->initializeTransaction([
+                    'amount' => (int) round($amount * 100),
+                    'customerEmail' => $user->email,
+                    'customerName' => $user->name,
+                    'paymentReference' => $reference,
+                    'paymentDescription' => 'Wallet Funding - SMS Gang',
+                    'redirectUrl' => $redirectUrl,
+                ]);
+
+                $data = $result['data'] ?? $result;
+                $checkoutUrl = $data['checkout_url']
+                    ?? $data['authorization_url']
+                    ?? $data['authorizationUrl']
+                    ?? null;
+
+                return response()->json([
+                    'message' => 'Wallet funding initiated. Please complete payment.',
+                    'checkout_url' => $checkoutUrl,
+                    'amount' => $amount,
+                    'currency' => 'NGN',
+                    'reference' => $reference,
+                    'transaction_id' => $transaction->id,
+                    'fund_id' => $reference,
+                ], 201);
+            });
         } catch (ValidationException $e) {
             return response()->json([
                 'message' => 'Validation error',
                 'errors' => $e->errors(),
             ], 422);
         } catch (Throwable $e) {
+            Log::error('Wallet funding initialization failed', [
+                'user_id' => $request->user()?->id,
+                'error' => $e->getMessage(),
+            ]);
+
             return response()->json([
                 'message' => 'Failed to initiate wallet funding.',
                 'error' => 'fund_failed',

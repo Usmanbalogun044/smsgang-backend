@@ -2,11 +2,10 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
-use App\Models\Order;
 use App\Models\Transaction;
-use App\Services\ActivationService;
+use App\Models\User;
+use App\Services\WalletService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +15,7 @@ use Throwable;
 class LendoverifyWebhookController extends Controller
 {
     public function __construct(
-        private ActivationService $activationService,
+        private WalletService $walletService,
     ) {}
 
     public function handle(Request $request): JsonResponse
@@ -25,7 +24,7 @@ class LendoverifyWebhookController extends Controller
         $event = $payload['event'] ?? null;
         $data = $payload['data'] ?? $payload;
 
-        Log::channel('activity')->info('Webhook received', [
+        Log::channel('activity')->info('Webhook received - Wallet Funding Only', [
             'event' => $event,
             'reference' => $data['paymentReference'] ?? 'unknown',
         ]);
@@ -48,100 +47,117 @@ class LendoverifyWebhookController extends Controller
             return response()->json(['message' => 'No reference found.'], 400);
         }
 
-        return DB::transaction(function () use ($reference, $request, $data) {
-            $order = Order::lockForUpdate()->where('payment_reference', $reference)->first();
+        // ONLY handle wallet funding (reference starts with WALLET_)
+        if (strpos($reference, 'WALLET_') === 0) {
+            return DB::transaction(function () use ($reference, $request, $data) {
+                $transaction = Transaction::lockForUpdate()
+                    ->where('reference', $reference)
+                    ->where('operation_type', 'wallet_fund')
+                    ->first();
 
-            if (! $order) {
-                Log::channel('activity')->warning('Webhook: order not found', ['reference' => $reference]);
-
-                return response()->json(['message' => 'Order not found.'], 404);
-            }
-
-            $paymentStatusRaw = $data['paymentStatus'] ?? $data['status'] ?? null;
-            $paymentStatus = is_string($paymentStatusRaw) ? strtolower(trim($paymentStatusRaw)) : null;
-            $failedStatus = in_array($paymentStatus, ['failed', 'cancelled', 'canceled', 'declined', 'abandoned'], true);
-
-            if ($failedStatus) {
-                $this->logTransaction($order, $data, 'failed', $request);
-                if ($order->status === OrderStatus::Pending) {
-                    $order->update(['status' => OrderStatus::Failed]);
+                if (!$transaction) {
+                    Log::channel('activity')->warning('Webhook: wallet transaction not found', ['reference' => $reference]);
+                    return response()->json(['message' => 'Wallet transaction not found.'], 404);
                 }
+
+                return $this->handleWalletFundingWebhook($transaction, $data, $request);
+            });
+        }
+
+        // Orders no longer use webhooks - they use wallet deduction
+        Log::channel('activity')->warning('Webhook reference not recognized - expected WALLET_ prefix', [
+            'reference' => $reference,
+            'event' => $event,
+        ]);
+
+        return response()->json(['message' => 'Invalid reference format. Expected WALLET_ prefix for wallet funding.'], 400);
+    }
+
+    /**
+     * Handle wallet funding webhook
+     */
+    private function handleWalletFundingWebhook(Transaction $transaction, array $data, Request $request): JsonResponse
+    {
+        $paymentStatusRaw = $data['paymentStatus'] ?? $data['status'] ?? null;
+        $paymentStatus = is_string($paymentStatusRaw) ? strtolower(trim($paymentStatusRaw)) : null;
+        $failedStatus = in_array($paymentStatus, ['failed', 'cancelled', 'canceled', 'declined', 'abandoned'], true);
+        $successStatus = in_array($paymentStatus, ['paid', 'success', 'successful', 'completed'], true);
+
+        try {
+            if ($failedStatus) {
+                // Mark transaction as failed
+                $transaction->update([
+                    'status' => 'failed',
+                    'gateway_response' => $data,
+                    'gateway_reference' => $data['paymentReference'] ?? null,
+                ]);
+
+                Log::channel('activity')->info('Wallet funding failed', [
+                    'transaction_id' => $transaction->id,
+                    'user_id' => $transaction->user_id,
+                    'reference' => $transaction->reference,
+                    'status' => 'failed',
+                    'amount' => $transaction->amount,
+                ]);
 
                 return response()->json(['message' => 'Payment failed recorded.']);
             }
 
-            if ($order->activation) {
-                $this->logTransaction($order, $data, 'paid', $request);
-                return response()->json(['message' => 'Already processed.']);
-            }
-
-            if ($order->status !== OrderStatus::Pending) {
-                $this->logTransaction($order, $data, 'paid', $request);
-                return response()->json(['message' => 'Order already processed.']);
-            }
-
-            $this->logTransaction($order, $data, 'paid', $request);
-            $order->update(['status' => OrderStatus::Paid]);
-
-            try {
-                $this->activationService->processAfterPayment($order);
-            } catch (Throwable $e) {
-                $msg = strtolower($e->getMessage());
-                $status = (str_contains($msg, 'not enough user balance') || str_contains($msg, 'insufficient'))
-                    ? 'payment_received_issue'
-                    : 'payment_received_issue';
-
-                $this->logTransaction($order, $data, $status, $request);
-
-                Log::channel('activity')->error('Webhook: activation failed after payment', [
-                    'order_id' => $order->id,
-                    'error' => $e->getMessage(),
-                    'transaction_status' => $status,
-                ]);
-            }
-
-            return response()->json(['message' => 'OK']);
-        });
-    }
-
-    /**
-     * Log or update transaction from webhook events.
-     */
-    private function logTransaction(Order $order, array $gatewayData, string $status, Request $request): void
-    {
-        try {
-            $existing = Transaction::where('reference', $order->payment_reference)->first();
-
-            $attrs = [
-                'user_id'           => $order->user_id,
-                'order_id'          => $order->id,
-                'gateway'           => 'lendoverify',
-                'gateway_reference' => $gatewayData['paymentReference'] ?? $gatewayData['reference'] ?? null,
-                'amount'            => (float) $order->price,
-                'currency'          => 'NGN',
-                'status'            => $status,
-                'description'       => "SMS Activation - order #{$order->id}",
-                'ip_address'        => $request->ip(),
-                'user_agent'        => substr((string) $request->userAgent(), 0, 255),
-                'gateway_response'  => $gatewayData,
-                'verified_at'       => in_array($status, ['paid', 'payment_received_issue'], true)
-                    ? now()
-                    : ($existing?->verified_at),
-            ];
-
-            if ($existing) {
-                if (in_array($existing->status, ['paid', 'payment_received_issue'], true) && in_array($status, ['pending', 'failed'], true)) {
-                    return;
+            if ($successStatus && $transaction->status !== 'paid') {
+                // Get amount from webhook data
+                $amount = (float) ($data['amountPaid'] ?? $data['amount'] ?? $transaction->amount);
+                if ($amount > 10000) {
+                    $amount = $amount / 100;
                 }
-                $existing->update($attrs);
-            } else {
-                Transaction::create(array_merge(['reference' => $order->payment_reference], $attrs));
+
+                // Mark transaction as paid
+                $transaction->update([
+                    'status' => 'paid',
+                    'gateway_response' => $data,
+                    'gateway_reference' => $data['paymentReference'] ?? null,
+                    'verified_at' => now(),
+                    'amount' => $amount,
+                ]);
+
+                // Add funds to wallet
+                $user = User::find($transaction->user_id);
+                if ($user) {
+                    $this->walletService->addFunds($user, $amount, $transaction->reference);
+
+                    Log::channel('activity')->info('Wallet funding successful', [
+                        'transaction_id' => $transaction->id,
+                        'user_id' => $user->id,
+                        'amount' => $amount,
+                        'final_balance' => $this->walletService->getBalance($user),
+                    ]);
+                } else {
+                    Log::error('Wallet funding webhook: user not found', [
+                        'transaction_id' => $transaction->id,
+                        'user_id' => $transaction->user_id,
+                    ]);
+                }
+
+                return response()->json(['message' => 'Wallet funded successfully.']);
             }
-        } catch (Throwable $e) {
-            Log::warning('Webhook transaction log failed', [
-                'order_id' => $order->id,
-                'error' => $e->getMessage(),
+
+            // Already processed
+            Log::channel('activity')->info('Webhook: wallet transaction already processed', [
+                'transaction_id' => $transaction->id,
+                'status' => $transaction->status,
             ]);
+
+            return response()->json(['message' => 'Already processed.']);
+        } catch (Throwable $e) {
+            Log::error('Wallet funding webhook error', [
+                'transaction_id' => $transaction->id,
+                'reference' => $transaction->reference,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            $transaction->update(['status' => 'processing_error']);
+
+            return response()->json(['message' => 'Error processing wallet funding.'], 500);
         }
     }
 }

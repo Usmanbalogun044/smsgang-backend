@@ -138,7 +138,22 @@ class ActivationController extends Controller
         }
     }
 
+    /**
+     * DEPRECATED: Orders now use wallet deduction only
+     * No longer needed - kept for backward compatibility
+     */
     public function verifyPayment(Request $request, Order $order): JsonResponse
+    {
+        return response()->json([
+            'message' => 'Orders now use wallet deduction. No payment verification needed.',
+            'error' => 'deprecated_endpoint',
+        ], 410);
+    }
+
+    /**
+     * DEPRECATED: Use buy() method which handles wallet deduction
+     */
+    private function verifyPaymentOld_DO_NOT_USE(Request $request, Order $order): JsonResponse
     {
         $this->authorize('view', $order);
 

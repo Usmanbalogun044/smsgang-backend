@@ -75,7 +75,10 @@ return [
 
         'activity' => [
             'driver' => 'stack',
-            'channels' => explode(',', (string) env('LOG_STACK', 'single')),
+            'channels' => array_merge(
+                explode(',', (string) env('LOG_STACK', 'single')),
+                env('DISCORD_WEBHOOK_URL') ? ['discord'] : []
+            ),
             'ignore_exceptions' => true,
         ],
 
@@ -131,6 +134,15 @@ return [
 
         'emergency' => [
             'path' => storage_path('logs/laravel.log'),
+        ],
+
+        'discord' => [
+            'driver' => 'monolog',
+            'level' => env('LOG_DISCORD_LEVEL', 'error'),
+            'handler' => \App\Logging\Handlers\DiscordHandler::class,
+            'handler_with' => [
+                'webhookUrl' => env('DISCORD_WEBHOOK_URL'),
+            ],
         ],
 
     ],
