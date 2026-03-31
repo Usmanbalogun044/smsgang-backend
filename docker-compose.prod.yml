@@ -20,6 +20,9 @@ services:
     container_name: smsgang-app-prod
     restart: always
     working_dir: /var/www/html
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:

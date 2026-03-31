@@ -102,6 +102,7 @@ class ActivationService
 
             $result = null;
             $buyErrors = [];
+            $transientProviderError = false;
 
             if (! empty($selectedOperator)) {
                 try {
@@ -126,11 +127,27 @@ class ActivationService
 
                     $result = $attempt;
                 } catch (\Throwable $selectedOperatorError) {
+                    $msg = strtolower($selectedOperatorError->getMessage());
+                    if (
+                        str_contains($msg, 'curl error 28') ||
+                        str_contains($msg, 'resolving timed out') ||
+                        str_contains($msg, 'could not resolve host') ||
+                        str_contains($msg, 'connection timed out') ||
+                        str_contains($msg, 'operation timed out')
+                    ) {
+                        $transientProviderError = true;
+                    }
                     $buyErrors[] = "Operator {$selectedOperator} failed: {$selectedOperatorError->getMessage()}";
                 }
             }
 
             if (! $result) {
+                if ($transientProviderError) {
+                    throw new \RuntimeException(
+                        'Temporary provider network issue while reserving number. Please retry in a few seconds.'
+                    );
+                }
+
                 throw new \RuntimeException(
                     'Selected operator is unavailable at buy time. ' .
                     (empty($buyErrors) ? '' : ('Attempts: ' . implode(' | ', $buyErrors)))

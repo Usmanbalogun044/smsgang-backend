@@ -113,7 +113,9 @@ class FiveSimProvider implements ProviderInterface
     private function request(): \Illuminate\Http\Client\PendingRequest
     {
         return Http::withToken($this->apiKey)
-            ->timeout(15)
+            ->connectTimeout(10)
+            ->timeout(25)
+            ->retry(2, 400)
             ->acceptJson();
     }
 }
