@@ -89,7 +89,7 @@ class AdminServiceController extends Controller
     public function uploadImage(Request $request, Service $service): JsonResponse
     {
         $request->validate([
-            'image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,avif', 'max:5120'],
         ]);
 
         $file = $request->file('image');
