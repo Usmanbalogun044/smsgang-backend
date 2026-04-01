@@ -20,6 +20,7 @@ class ServiceController extends Controller
         $search = trim((string) $request->query('search', ''));
         $perPage = (int) $request->query('per_page', 80);
         $perPage = max(10, min($perPage, 200));
+        $popularSlugs = config('popular-services.priority_order', []);
 
         $query = Service::query()->where('is_active', true);
 
@@ -28,6 +29,21 @@ class ServiceController extends Controller
                 $q->where('name', 'like', "%{$search}%")
                     ->orWhere('slug', 'like', "%{$search}%");
             });
+        }
+
+        if (!empty($popularSlugs)) {
+            $caseParts = [];
+            $bindings = [];
+
+            foreach ($popularSlugs as $index => $slug) {
+                $caseParts[] = 'WHEN ? THEN '.$index;
+                $bindings[] = $slug;
+            }
+
+            $query->orderByRaw(
+                'CASE slug '.implode(' ', $caseParts).' ELSE 9999 END',
+                $bindings
+            );
         }
 
         $services = $query
