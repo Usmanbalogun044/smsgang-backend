@@ -15,6 +15,7 @@ class ServiceResource extends JsonResource
             'id' => $this->id,
             'name' => $this->name,
             'slug' => $this->slug,
+            'image_url' => $this->image_url,
             'provider_service_code' => $this->when($isAdmin, $this->provider_service_code),
             'provider_category' => $this->when($isAdmin, $this->provider_category),
             'provider_qty' => $this->when($isAdmin, $this->provider_qty),
