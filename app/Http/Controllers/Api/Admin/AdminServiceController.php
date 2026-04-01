@@ -124,4 +124,11 @@ class AdminServiceController extends Controller
             'path' => $path,
         ]);
     }
+
+    public function uploadImageById(Request $request, int $serviceId): JsonResponse
+    {
+        $service = Service::query()->findOrFail($serviceId);
+
+        return $this->uploadImage($request, $service);
+    }
 }

@@ -44,6 +44,7 @@ Route::middleware('throttle:api')->group(function () {
 
     // Temporary open endpoints for manual service image ingestion.
     Route::get('/public/service-images/pending', [AdminServiceController::class, 'pendingImages']);
+    Route::post('/public/service-images/id/{serviceId}/upload', [AdminServiceController::class, 'uploadImageById']);
     Route::post('/public/service-images/{service}/upload', [AdminServiceController::class, 'uploadImage']);
 });
 
