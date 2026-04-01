@@ -41,6 +41,10 @@ Route::middleware('throttle:api')->group(function () {
     Route::get('/countries', [ServiceController::class, 'countries']);
     Route::get('/services/{service}/countries', [ServiceController::class, 'countriesForService']);
     Route::get('/countries/{country}/services', [ServiceController::class, 'servicesForCountry']);
+
+    // Temporary open endpoints for manual service image ingestion.
+    Route::get('/public/service-images/pending', [AdminServiceController::class, 'pendingImages']);
+    Route::post('/public/service-images/{service}/upload', [AdminServiceController::class, 'uploadImage']);
 });
 
 // Webhook (no auth, no CSRF)
@@ -98,6 +102,8 @@ Route::middleware(['auth:sanctum', 'active', 'admin', 'throttle:api'])
         // Services
         Route::get('/services', [AdminServiceController::class, 'index']);
         Route::post('/services/{service}/toggle', [AdminServiceController::class, 'toggle']);
+        Route::get('/services/images/pending', [AdminServiceController::class, 'pendingImages']);
+        Route::post('/services/{service}/image', [AdminServiceController::class, 'uploadImage']);
 
         // Countries
         Route::get('/countries', [AdminCountryController::class, 'index']);

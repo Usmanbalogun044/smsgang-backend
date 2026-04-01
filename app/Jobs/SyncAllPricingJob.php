@@ -170,6 +170,7 @@ class SyncAllPricingJob implements ShouldQueue
             foreach ($apiServices as $slug => $data) {
                 $slug = strtolower((string) $slug);
                 $serviceData = is_array($data) ? $data : [];
+
                 $serviceRows[] = [
                     'provider_service_code' => $slug,
                     'name' => ucwords(str_replace(['_', '-'], ' ', $slug)),

@@ -25,61 +25,8 @@ class SmmOrderController extends Controller
         private TelegramNotificationService $telegramService,
     ) {}
 
-    private function extractProgressMetrics(SmmOrder $order, ?array $statusData = null): array
-    {
-        $payload = $statusData ?? (is_array($order->provider_payload) ? $order->provider_payload : []);
-
-        $remains = isset($payload['remains']) && is_numeric($payload['remains'])
-            ? max(0, (int) $payload['remains'])
-            : null;
-
-        $startCount = isset($payload['start_count']) && is_numeric($payload['start_count'])
-            ? (int) $payload['start_count']
-            : null;
-
-        $completedQuantity = is_int($remains)
-            ? max(0, (int) $order->quantity - $remains)
-            : null;
-
-        $progressPercent = is_int($completedQuantity) && (int) $order->quantity > 0
-            ? min(100, round(($completedQuantity / (int) $order->quantity) * 100, 2))
-            : null;
-
-        return [
-            'remains' => $remains,
-            'start_count' => $startCount,
-            'completed_quantity' => $completedQuantity,
-            'progress_percent' => $progressPercent,
-        ];
-    }
-
-    private function formatOrderForUser(SmmOrder $order, ?array $statusData = null): array
-    {
-        $statusPayload = is_array($statusData) ? $statusData : [];
-        $progress = $this->extractProgressMetrics($order, $statusPayload);
-
-        return [
-            'id' => $order->id,
-            'service_name' => $order->service?->name,
-            'service' => $order->service ? [
-                'id' => $order->service->id,
-                'name' => $order->service->name,
-            ] : null,
-            'link' => $order->link,
-            'quantity' => $order->quantity,
-            'total_cost_ngn' => (string) $order->total_cost_ngn,
-            'charge_ngn' => isset($statusPayload['charge'])
-                ? (string) ((float) $statusPayload['charge'])
-                : ($order->charge_ngn !== null ? (string) $order->charge_ngn : null),
-            'status' => $statusPayload['status'] ?? $order->status->value,
-            'remains' => $progress['remains'],
-            'start_count' => $progress['start_count'],
-            'completed_quantity' => $progress['completed_quantity'],
-            'progress_percent' => $progress['progress_percent'],
-            'created_at' => $order->created_at->toIso8601String(),
-            'updated_at' => $order->updated_at->toIso8601String(),
-        ];
-    }
+   
+   
 
     /**
      * Create a new SMM order
@@ -318,7 +265,14 @@ class SmmOrderController extends Controller
             $orders = $query->latest()->paginate($perPage);
 
             return response()->json([
-                'data' => $orders->map(fn ($order) => $this->formatOrderForUser($order)),
+                'data' => $orders->map(function ($order) {
+                    // Fetch fresh status for pending orders to match detail view
+                    $statusData = null;
+                    if ($order->crestpanel_order_id && in_array($order->status->value, SmmOrderStatus::providerTracked(), true)) {
+                        $statusData = $this->crestPanelService->getOrderStatus($order->crestpanel_order_id);
+                    }
+                    return $this->formatOrderForUser($order, is_array($statusData) ? $statusData : null);
+                }),
                 'pagination' => [
                     'total' => $orders->total(),
                     'per_page' => $orders->perPage(),
@@ -361,5 +315,60 @@ class SmmOrderController extends Controller
                 'error' => 'fetch_failed',
             ], 422);
         }
+    }
+     private function extractProgressMetrics(SmmOrder $order, ?array $statusData = null): array
+    {
+        $payload = $statusData ?? (is_array($order->provider_payload) ? $order->provider_payload : []);
+
+        $remains = isset($payload['remains']) && is_numeric($payload['remains'])
+            ? max(0, (int) $payload['remains'])
+            : null;
+
+        $startCount = isset($payload['start_count']) && is_numeric($payload['start_count'])
+            ? (int) $payload['start_count']
+            : null;
+
+        $completedQuantity = is_int($remains)
+            ? max(0, (int) $order->quantity - $remains)
+            : null;
+
+        $progressPercent = is_int($completedQuantity) && (int) $order->quantity > 0
+            ? min(100, round(($completedQuantity / (int) $order->quantity) * 100, 2))
+            : null;
+
+        return [
+            'remains' => $remains,
+            'start_count' => $startCount,
+            'completed_quantity' => $completedQuantity,
+            'progress_percent' => $progressPercent,
+        ];
+    }
+
+    private function formatOrderForUser(SmmOrder $order, ?array $statusData = null): array
+    {
+        $statusPayload = is_array($statusData) ? $statusData : [];
+        $progress = $this->extractProgressMetrics($order, $statusPayload);
+
+        return [
+            'id' => $order->id,
+            'service_name' => $order->service?->name,
+            'service' => $order->service ? [
+                'id' => $order->service->id,
+                'name' => $order->service->name,
+            ] : null,
+            'link' => $order->link,
+            'quantity' => $order->quantity,
+            'total_cost_ngn' => (string) $order->total_cost_ngn,
+            'charge_ngn' => isset($statusPayload['charge'])
+                ? (string) ((float) $statusPayload['charge'])
+                : ($order->charge_ngn !== null ? (string) $order->charge_ngn : null),
+            'status' => $statusPayload['status'] ?? $order->status->value,
+            'remains' => $progress['remains'],
+            'start_count' => $progress['start_count'],
+            'completed_quantity' => $progress['completed_quantity'],
+            'progress_percent' => $progress['progress_percent'],
+            'created_at' => $order->created_at->toIso8601String(),
+            'updated_at' => $order->updated_at->toIso8601String(),
+        ];
     }
 }

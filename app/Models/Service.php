@@ -22,6 +22,7 @@ class Service extends Model
         'provider_payload',
         'last_synced_at',
         'is_active',
+        'image_url',
     ];
 
     protected function casts(): array
