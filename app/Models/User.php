@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 use App\Enums\UserStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -21,6 +22,12 @@ class User extends Authenticatable
         'password',
         'role',
         'status',
+        'is_online',
+        'last_login_ip',
+        'last_user_agent',
+        'last_login_at',
+        'last_seen_at',
+        'last_logout_at',
     ];
 
     protected $attributes = [
@@ -40,10 +47,14 @@ class User extends Authenticatable
             'password' => 'hashed',
             'role' => UserRole::class,
             'status' => UserStatus::class,
+            'is_online' => 'boolean',
+            'last_login_at' => 'datetime',
+            'last_seen_at' => 'datetime',
+            'last_logout_at' => 'datetime',
         ];
     }
 
-    public function wallet()
+    public function wallet(): HasOne
     {
         return $this->hasOne(Wallet::class);
     }
@@ -57,6 +68,11 @@ class User extends Authenticatable
     public function orders(): HasMany
     {
         return $this->hasMany(Order::class);
+    }
+
+    public function loginActivities(): HasMany
+    {
+        return $this->hasMany(UserLoginActivity::class);
     }
 
     public function isAdmin(): bool

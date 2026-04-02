@@ -12,7 +12,7 @@ class EnsureIsActive
     public function handle(Request $request, Closure $next): Response
     {
         if ($request->user()?->status !== UserStatus::Active) {
-            return response()->json(['message' => 'Account suspended.'], 403);
+            return response()->json(['message' => 'Your account is suspended. Please contact support team.'], 403);
         }
 
         return $next($request);

@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\Route;
 Route::get('/health', [HealthController::class, 'check']);
 
 // Public auth routes
-Route::middleware('throttle:auth')->group(function () {
+Route::middleware(['throttle:auth', 'check.bot'])->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/verify-email-otp', [AuthController::class, 'verifyEmailOtp'])->middleware('throttle:otp-verify');
@@ -53,7 +53,7 @@ Route::post('/webhooks/lendoverify', [LendoverifyWebhookController::class, 'hand
     ->middleware('throttle:webhook');
 
 // Authenticated user routes
-Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function () {
+Route::middleware(['auth:sanctum', 'active', 'track.activity', 'throttle:api'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'user']);
     Route::put('/user/profile', [AuthController::class, 'updateProfile']);
@@ -127,6 +127,7 @@ Route::middleware(['auth:sanctum', 'active', 'admin', 'throttle:api'])
         // Users
         Route::get('/users/stats', [AdminUserController::class, 'stats']);
         Route::get('/users', [AdminUserController::class, 'index']);
+        Route::get('/users/{user}', [AdminUserController::class, 'show']);
         Route::put('/users/{user}', [AdminUserController::class, 'update']);
 
         // Settings (global markup + exchange rate)

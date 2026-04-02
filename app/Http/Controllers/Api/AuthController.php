@@ -10,6 +10,7 @@ use App\Http\Requests\UpdateProfileRequest;
 use App\Http\Resources\UserResource;
 use App\Mail\EmailVerificationOtpMail;
 use App\Models\User;
+use App\Models\UserLoginActivity;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\JsonResponse;
@@ -23,6 +24,18 @@ use Illuminate\Validation\ValidationException;
 class AuthController extends Controller
 {
     private const OTP_TTL_MINUTES = 10;
+
+    private function recordLoginActivity(?User $user, Request $request, string $eventType, array $context = []): void
+    {
+        UserLoginActivity::create([
+            'user_id' => $user?->id,
+            'email' => $user?->email ?? (string) $request->input('email', ''),
+            'event_type' => $eventType,
+            'ip_address' => $request->ip(),
+            'user_agent' => (string) $request->userAgent(),
+            'context' => $context ?: null,
+        ]);
+    }
 
     private function otpCacheKey(string $email): string
     {
@@ -132,6 +145,10 @@ class AuthController extends Controller
         $user = User::where('email', $request->email)->first();
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
+            $this->recordLoginActivity(null, $request, 'failed_login', [
+                'email' => $request->email,
+            ]);
+
             Log::channel('activity')->warning('Failed login attempt', [
                 'email' => $request->email,
             ]);
@@ -142,13 +159,15 @@ class AuthController extends Controller
         }
 
         if (! $user->isActive()) {
+            $this->recordLoginActivity($user, $request, 'blocked_suspended_login');
+
             Log::channel('activity')->warning('Suspended user login attempt', [
                 'user_id' => $user->id,
                 'email' => $user->email,
             ]);
 
             return response()->json([
-                'message' => 'Account suspended.',
+                'message' => 'Your account is suspended. Please contact support team.',
             ], 403);
         }
 
@@ -161,6 +180,16 @@ class AuthController extends Controller
                 'email' => $user->email,
             ], 403);
         }
+
+        $user->forceFill([
+            'is_online' => true,
+            'last_login_ip' => $request->ip(),
+            'last_user_agent' => (string) $request->userAgent(),
+            'last_login_at' => now(),
+            'last_seen_at' => now(),
+        ])->save();
+
+        $this->recordLoginActivity($user, $request, 'login_success');
 
         $token = $user->createToken('auth-token')->plainTextToken;
 
@@ -178,6 +207,17 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
+        $user = $request->user();
+        if ($user) {
+            $user->forceFill([
+                'is_online' => false,
+                'last_seen_at' => now(),
+                'last_logout_at' => now(),
+            ])->save();
+
+            $this->recordLoginActivity($user, $request, 'logout');
+        }
+
         $request->user()?->tokens()?->delete();
 
         return response()->json(['message' => 'Logged out.']);

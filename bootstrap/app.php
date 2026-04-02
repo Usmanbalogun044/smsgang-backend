@@ -16,6 +16,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => \App\Http\Middleware\EnsureIsAdmin::class,
             'active' => \App\Http\Middleware\EnsureIsActive::class,
+            'check.bot' => \App\Http\Middleware\CheckBotMiddleware::class,
+            'track.activity' => \App\Http\Middleware\TrackUserActivityMiddleware::class,
         ]);
     })
     ->withSchedule(function (Schedule $schedule) {
