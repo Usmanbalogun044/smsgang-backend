@@ -114,4 +114,19 @@ class AdminUserController extends Controller
 
         return new UserResource($user);
     }
+
+    public function destroy(User $user): JsonResponse
+    {
+        $user->tokens()->delete();
+        $user->delete();
+
+        Log::channel('activity')->info('Admin deleted user', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+        ]);
+
+        return response()->json([
+            'message' => 'User deleted successfully.',
+        ]);
+    }
 }

@@ -129,6 +129,7 @@ Route::middleware(['auth:sanctum', 'active', 'admin', 'throttle:api'])
         Route::get('/users', [AdminUserController::class, 'index']);
         Route::get('/users/{user}', [AdminUserController::class, 'show']);
         Route::put('/users/{user}', [AdminUserController::class, 'update']);
+        Route::delete('/users/{user}', [AdminUserController::class, 'destroy']);
 
         // Settings (global markup + exchange rate)
         Route::get('/settings', [AdminSettingsController::class, 'show']);
