@@ -96,9 +96,6 @@ class LendoverifyService
 
             $data = $response->json();
 
-            Log::info('Lendoverify Verification Raw:', ['body' => $response->body()]);
-            Log::info('Lendoverify Verification JSON:', ['json' => $data]);
-
             if ($response->successful()) {
                 return $data;
             }

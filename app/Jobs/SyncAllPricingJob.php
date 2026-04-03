@@ -33,16 +33,8 @@ class SyncAllPricingJob implements ShouldQueue
         $startDate = now();
 
         if (Cache::get('sync_in_progress')) {
-            Log::channel('activity')->warning('SyncAllPricingJob skipped because a sync is already in progress', [
-                'started_at' => $startDate->toDateTimeString(),
-            ]);
-
             return;
         }
-
-        Log::channel('activity')->info('SyncAllPricingJob started', [
-            'started_at' => $startDate->toDateTimeString(),
-        ]);
         
         Cache::put('sync_in_progress', true, 1800);
 
@@ -67,7 +59,6 @@ class SyncAllPricingJob implements ShouldQueue
             }
 
             // Step 2: Sync Countries
-            Log::channel('activity')->info('📊 Step 2: Fetching countries from 5SIM API...');
             $countriesResponse = $providerRequest->get("{$baseUrl}/guest/countries");
             
             if (!$countriesResponse->successful()) {
@@ -386,25 +377,8 @@ class SyncAllPricingJob implements ShouldQueue
                     ]);
             }
 
-            // Summary
+            // Summary values retained for debug/workflow consistency.
             $durationSeconds = round(microtime(true) - $startTime, 2);
-            $endDate = now();
-            $totalErrors = $priceErrors;
-
-            Log::channel('activity')->info('SyncAllPricingJob completed', [
-                'started_at' => $startDate->toDateTimeString(),
-                'finished_at' => $endDate->toDateTimeString(),
-                'duration_seconds' => $durationSeconds,
-                'countries_fetched' => $countrysFetched,
-                'services_fetched' => $servicesFetched,
-                'price_country_keys' => $pricesFetched,
-                'prices_upserted' => $syncedCount,
-                'price_created' => $priceCreated,
-                'price_updated' => $priceUpdated,
-                'inactive_stock_pairs' => $skippedCount,
-                'stale_zeroed' => $staleZeroed,
-                'errors' => $totalErrors,
-            ]);
 
         } catch (\Throwable $e) {
             $durationSeconds = round(microtime(true) - $startTime, 2);

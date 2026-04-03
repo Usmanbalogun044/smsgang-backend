@@ -3,6 +3,7 @@
 use App\Jobs\CheckAllActiveSmsJob;
 use App\Jobs\CheckSmmOrderStatusJob;
 use App\Jobs\ExpireActivationsJob;
+use App\Jobs\ProcessTwilioRenewalsJob;
 use App\Jobs\SyncAllPricingJob;
 use App\Jobs\SyncSmmServicesJob;
 use Illuminate\Foundation\Inspiring;
@@ -64,6 +65,15 @@ Schedule::job(new CheckSmmOrderStatusJob())
     ->withoutOverlapping(10)
     ->onFailure(function () {
         Log::channel('activity')->error('❌ SMM order status check failed');
+    });
+
+// Process Twilio monthly renewals and releases every 10 minutes
+Schedule::job(new ProcessTwilioRenewalsJob())
+    ->name('process-twilio-renewals')
+    ->everyTenMinutes()
+    ->withoutOverlapping(15)
+    ->onFailure(function () {
+        Log::channel('activity')->error('❌ Twilio renewals processing failed');
     });
 
 // Clean up failed jobs every day at 2 AM

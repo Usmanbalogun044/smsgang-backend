@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\Admin\AdminSmmOrderController;
 use App\Http\Controllers\Api\Admin\AdminSmmServiceController;
 use App\Http\Controllers\Api\Admin\AdminSmmSettingsController;
 use App\Http\Controllers\Api\Admin\AdminTransactionController;
+use App\Http\Controllers\Api\Admin\AdminTwilioSubscriptionController;
 use App\Http\Controllers\Api\Admin\AdminUserController;
 use App\Http\Controllers\Api\Admin\WithdrawalController;
 use App\Http\Controllers\Api\AuthController;
@@ -21,6 +22,8 @@ use App\Http\Controllers\Api\ServiceController;
 use App\Http\Controllers\Api\SmmOrderController;
 use App\Http\Controllers\Api\SmmServiceController;
 use App\Http\Controllers\Api\TransactionController;
+use App\Http\Controllers\Api\TwilioSubscriptionController;
+use App\Http\Controllers\Api\TwilioWebhookController;
 use App\Http\Controllers\Api\WalletController;
 use Illuminate\Support\Facades\Route;
 
@@ -31,6 +34,7 @@ Route::get('/health', [HealthController::class, 'check']);
 Route::middleware(['throttle:auth', 'check.bot'])->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/google', [AuthController::class, 'google']);
     Route::post('/verify-email-otp', [AuthController::class, 'verifyEmailOtp'])->middleware('throttle:otp-verify');
     Route::post('/resend-email-otp', [AuthController::class, 'resendEmailOtp'])->middleware('throttle:otp-resend');
 });
@@ -50,6 +54,17 @@ Route::middleware('throttle:api')->group(function () {
 
 // Webhook (no auth, no CSRF)
 Route::post('/webhooks/lendoverify', [LendoverifyWebhookController::class, 'handle'])
+    ->middleware('throttle:webhook');
+
+Route::post('/webhooks/monthly-numbers/sms', [TwilioWebhookController::class, 'handleSms'])
+    ->middleware('throttle:webhook');
+Route::post('/webhooks/monthly-numbers/status', [TwilioWebhookController::class, 'handleStatus'])
+    ->middleware('throttle:webhook');
+
+// Backward-compatible webhook aliases
+Route::post('/webhooks/twilio/sms', [TwilioWebhookController::class, 'handleSms'])
+    ->middleware('throttle:webhook');
+Route::post('/webhooks/twilio/status', [TwilioWebhookController::class, 'handleStatus'])
     ->middleware('throttle:webhook');
 
 // Authenticated user routes
@@ -93,6 +108,28 @@ Route::middleware(['auth:sanctum', 'active', 'track.activity', 'throttle:api'])-
         Route::post('/orders', [SmmOrderController::class, 'store']);
         Route::get('/orders', [SmmOrderController::class, 'index']);
         Route::get('/orders/{order}', [SmmOrderController::class, 'show']);
+    });
+
+    // Monthly communication numbers
+    Route::prefix('monthly-numbers')->group(function () {
+        Route::get('/inventory', [TwilioSubscriptionController::class, 'inventory']);
+        Route::post('/purchase', [TwilioSubscriptionController::class, 'purchase'])->middleware('throttle:buy');
+        Route::get('/subscriptions', [TwilioSubscriptionController::class, 'index']);
+        Route::get('/subscriptions/{subscription}', [TwilioSubscriptionController::class, 'show']);
+        Route::patch('/subscriptions/{subscription}/auto-renew', [TwilioSubscriptionController::class, 'updateAutoRenew']);
+        Route::get('/subscriptions/{subscription}/messages', [TwilioSubscriptionController::class, 'messages']);
+        Route::post('/subscriptions/{subscription}/messages', [TwilioSubscriptionController::class, 'sendMessage']);
+    });
+
+    // Backward-compatible user aliases
+    Route::prefix('twilio')->group(function () {
+        Route::get('/inventory', [TwilioSubscriptionController::class, 'inventory']);
+        Route::post('/purchase', [TwilioSubscriptionController::class, 'purchase'])->middleware('throttle:buy');
+        Route::get('/subscriptions', [TwilioSubscriptionController::class, 'index']);
+        Route::get('/subscriptions/{subscription}', [TwilioSubscriptionController::class, 'show']);
+        Route::patch('/subscriptions/{subscription}/auto-renew', [TwilioSubscriptionController::class, 'updateAutoRenew']);
+        Route::get('/subscriptions/{subscription}/messages', [TwilioSubscriptionController::class, 'messages']);
+        Route::post('/subscriptions/{subscription}/messages', [TwilioSubscriptionController::class, 'sendMessage']);
     });
 });
 
@@ -157,4 +194,16 @@ Route::middleware(['auth:sanctum', 'active', 'admin', 'throttle:api'])
         // SMM Orders
         Route::get('/smm/orders', [AdminSmmOrderController::class, 'index']);
         Route::get('/smm/orders/{order}', [AdminSmmOrderController::class, 'show']);
+
+        // Monthly subscriptions
+        Route::get('/monthly-numbers/stats', [AdminTwilioSubscriptionController::class, 'stats']);
+        Route::get('/monthly-numbers/subscriptions', [AdminTwilioSubscriptionController::class, 'index']);
+        Route::get('/monthly-numbers/subscriptions/{subscription}', [AdminTwilioSubscriptionController::class, 'show']);
+        Route::get('/monthly-numbers/subscriptions/{subscription}/messages', [AdminTwilioSubscriptionController::class, 'messages']);
+
+        // Backward-compatible admin aliases
+        Route::get('/twilio/stats', [AdminTwilioSubscriptionController::class, 'stats']);
+        Route::get('/twilio/subscriptions', [AdminTwilioSubscriptionController::class, 'index']);
+        Route::get('/twilio/subscriptions/{subscription}', [AdminTwilioSubscriptionController::class, 'show']);
+        Route::get('/twilio/subscriptions/{subscription}/messages', [AdminTwilioSubscriptionController::class, 'messages']);
     });

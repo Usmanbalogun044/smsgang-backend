@@ -163,7 +163,7 @@ class ActivationController extends Controller
             ]);
             
             return response()->json([
-                'message' => $e->getMessage() ?: 'Failed to process your request. Please try again.',
+                'message' => 'Failed to process your request. Please try again.',
                 'error' => 'purchase_failed',
             ], 422);
         } finally {

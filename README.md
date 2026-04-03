@@ -35,6 +35,7 @@ Premium SMS activation platform built with Laravel 12, Redis queues, and Docker.
 - **Background Jobs**: Redis queues with 8 concurrent workers
 - **Task Scheduling**: Auto-pricing sync, SMS polling, activation expiration
 - **Rate Conversion**: RapidAPI currency API with hourly syncing
+- **Google Auth**: Google sign-in for users, with automatic linking by verified email
 - **Admin Dashboard**: Transaction monitoring, order management, analytics
 - **API Documentation**: Swagger UI for easy endpoint discovery
 - **Container Logs**: Dozzle real-time log viewer
@@ -63,6 +64,10 @@ docker-compose logs -f app
 # Access services
 # API: http://localhost:8000
 # Database: http://localhost:8080 (Adminer)
+
+# Optional Google sign-in setup
+# GOOGLE_CLIENT_ID=your-google-oauth-client-id
+# For local frontend, set NEXT_PUBLIC_GOOGLE_CLIENT_ID to the same value
 ```
 
 ### Production Deployment (30 minutes)

@@ -50,6 +50,45 @@ class PricingService
         return round($finalNgn, 2);
     }
 
+    /**
+     * Calculate Twilio monthly subscription sell price in NGN.
+     */
+    public function calculateTwilioMonthlyPrice(float $providerPriceUsd): float
+    {
+        return $this->calculateTwilioMonthlyBreakdown($providerPriceUsd)['final_price_ngn'];
+    }
+
+    /**
+     * Return full Twilio pricing breakdown for audit/profit persistence.
+     */
+    public function calculateTwilioMonthlyBreakdown(float $providerPriceUsd): array
+    {
+        $exchangeRate = (float) Setting::get('exchange_rate_usd_ngn', 1600.0);
+        $effectiveExchangeRate = $exchangeRate * 1.05;
+
+        $baseCostNgn = round($providerPriceUsd * $effectiveExchangeRate, 2);
+
+        $twilioMarkupType = (string) Setting::get('twilio_markup_type', 'fixed');
+        $twilioMarkupValue = (float) Setting::get('twilio_markup_value', 0);
+
+        $finalPrice = $twilioMarkupType === 'percentage'
+            ? round($baseCostNgn * (1 + ($twilioMarkupValue / 100)), 2)
+            : round($baseCostNgn + $twilioMarkupValue, 2);
+
+        return [
+            'provider_price_usd' => round($providerPriceUsd, 4),
+            'exchange_rate_used' => round($exchangeRate, 4),
+            'effective_exchange_rate' => round($effectiveExchangeRate, 4),
+            'global_markup_type_used' => null,
+            'global_markup_value_used' => null,
+            'twilio_markup_type_used' => $twilioMarkupType,
+            'twilio_markup_value_used' => round($twilioMarkupValue, 4),
+            'estimated_cost_ngn' => $baseCostNgn,
+            'final_price_ngn' => $finalPrice,
+            'profit_amount' => max(0, round($finalPrice - $baseCostNgn, 2)),
+        ];
+    }
+
     public function syncPricesFromProvider(Country $country, Service $service): void
     {
         try {

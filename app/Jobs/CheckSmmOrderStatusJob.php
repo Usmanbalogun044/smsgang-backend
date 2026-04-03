@@ -36,6 +36,7 @@ class CheckSmmOrderStatusJob implements ShouldQueue
             $failCount = 0;
 
             foreach ($orders as $order) {
+                /** @var SmmOrder $order */
                 try {
                     $statusData = $crestPanelService->getOrderStatus($order->crestpanel_order_id);
 
@@ -58,15 +59,6 @@ class CheckSmmOrderStatusJob implements ShouldQueue
                     ]);
 
                     $successCount++;
-
-                    // Log if order is completed
-                    if (in_array($nextStatus, SmmOrderStatus::terminal(), true)) {
-                        Log::channel('activity')->info('SMM order status changed', [
-                            'order_id' => $order->id,
-                            'crestpanel_order_id' => $order->crestpanel_order_id,
-                            'status' => $nextStatus,
-                        ]);
-                    }
                 } catch (\Exception $e) {
                     Log::error('Failed to check SMM order status', [
                         'order_id' => $order->id,
@@ -75,14 +67,6 @@ class CheckSmmOrderStatusJob implements ShouldQueue
                     ]);
                     $failCount++;
                 }
-            }
-
-            if ($successCount > 0 || $failCount > 0) {
-                Log::channel('activity')->info('SMM order status check completed', [
-                    'total_checked' => count($orders),
-                    'success' => $successCount,
-                    'failed' => $failCount,
-                ]);
             }
         } catch (\Exception $e) {
             Log::channel('activity')->error('SMM order status check job failed', [

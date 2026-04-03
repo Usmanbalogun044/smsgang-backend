@@ -14,8 +14,6 @@ class ExchangeRateService
      */
     public function syncUsdToNgn(): ?float
     {
-        Log::info('USD to NGN exchange rate sync started.');
-
         $baseUrl = rtrim((string) config('services.currency_api.base_url', ''), '/');
         $convertPath = (string) config('services.currency_api.convert_path', '/convert');
         $apiKey = (string) config('services.currency_api.api_key', '');
@@ -25,10 +23,6 @@ class ExchangeRateService
         $amount = (float) config('services.currency_api.amount', 1);
 
         if ($baseUrl === '' || $apiKey === '') {
-            Log::warning('Exchange rate sync skipped: currency API is not configured.', [
-                'has_base_url' => $baseUrl !== '',
-                'has_api_key' => $apiKey !== '',
-            ]);
             return null;
         }
 
@@ -128,11 +122,6 @@ class ExchangeRateService
         if (is_numeric($providerTimestamp)) {
             Setting::set('exchange_rate_provider_timestamp', (string) $providerTimestamp);
         }
-
-        Log::info('Exchange rate synced successfully.', [
-            'usd_ngn' => $normalizedRate,
-            'source' => 'rapidapi:convert',
-        ]);
 
         return $normalizedRate;
     }

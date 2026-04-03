@@ -20,6 +20,8 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'google_id',
+        'google_avatar_url',
         'role',
         'status',
         'is_online',
@@ -73,6 +75,16 @@ class User extends Authenticatable
     public function loginActivities(): HasMany
     {
         return $this->hasMany(UserLoginActivity::class);
+    }
+
+    public function twilioSubscriptions(): HasMany
+    {
+        return $this->hasMany(TwilioNumberSubscription::class);
+    }
+
+    public function twilioMessages(): HasMany
+    {
+        return $this->hasMany(TwilioMessage::class);
     }
 
     public function isAdmin(): bool

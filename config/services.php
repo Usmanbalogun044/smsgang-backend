@@ -35,9 +35,26 @@ return [
         ],
     ],
 
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+    ],
+
     'fivesim' => [
         'base_url' => env('FIVESIM_BASE_URL', 'https://5sim.net/v1'),
         'api_key' => env('FIVESIM_API_KEY'),
+    ],
+
+    'twilio' => [
+        'base_url' => env('TWILIO_BASE_URL', 'https://api.twilio.com'),
+        'api_version' => env('TWILIO_API_VERSION', '2010-04-01'),
+        'account_sid' => env('TWILIO_ACCOUNT_SID'),
+        'auth_token' => env('TWILIO_AUTH_TOKEN'),
+        'messaging_service_sid' => env('TWILIO_MESSAGING_SERVICE_SID'),
+        'default_country' => env('TWILIO_DEFAULT_COUNTRY', 'US'),
+        'default_monthly_price_usd' => (float) env('TWILIO_DEFAULT_MONTHLY_PRICE_USD', 1.20),
+        'inventory_cache_ttl' => (int) env('TWILIO_INVENTORY_CACHE_TTL', 90),
+        'webhook_signature_validation' => filter_var(env('TWILIO_WEBHOOK_SIGNATURE_VALIDATION', true), FILTER_VALIDATE_BOOL),
+        'webhook_base_url' => env('TWILIO_WEBHOOK_BASE_URL', env('APP_URL')),
     ],
 
     'lendoverify' => [

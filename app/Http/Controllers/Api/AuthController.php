@@ -15,9 +15,11 @@ use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Throwable;
 use Illuminate\Validation\ValidationException;
 
@@ -202,6 +204,121 @@ class AuthController extends Controller
         return response()->json([
             'user' => new UserResource($user),
             'token' => $token,
+        ]);
+    }
+
+    public function google(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'credential' => ['required', 'string'],
+        ]);
+
+        $clientId = (string) config('services.google.client_id', '');
+        if ($clientId === '') {
+            return response()->json(['message' => 'Google sign-in is not configured.'], 500);
+        }
+
+        $response = Http::timeout(15)->get('https://oauth2.googleapis.com/tokeninfo', [
+            'id_token' => $validated['credential'],
+        ]);
+
+        if (! $response->successful()) {
+            Log::channel('activity')->warning('Google token verification failed', [
+                'status' => $response->status(),
+                'body' => $response->json(),
+            ]);
+
+            return response()->json(['message' => 'Invalid Google credential.'], 401);
+        }
+
+        $payload = $response->json();
+        if (! is_array($payload)) {
+            return response()->json(['message' => 'Invalid Google credential.'], 401);
+        }
+
+        $verifiedEmail = strtolower(trim((string) ($payload['email'] ?? '')));
+        $googleId = (string) ($payload['sub'] ?? '');
+        $emailVerified = filter_var($payload['email_verified'] ?? false, FILTER_VALIDATE_BOOL);
+        $audience = (string) ($payload['aud'] ?? '');
+
+        if ($verifiedEmail === '' || $googleId === '' || ! $emailVerified || $audience !== $clientId) {
+            return response()->json(['message' => 'Google account could not be verified.'], 401);
+        }
+
+        /** @var User|null $user */
+        $user = User::query()
+            ->where('google_id', $googleId)
+            ->orWhereRaw('LOWER(email) = ?', [$verifiedEmail])
+            ->first();
+
+        if ($user && ! $user->isActive()) {
+            return response()->json([
+                'message' => 'Your account is suspended. Please contact support team.',
+            ], 403);
+        }
+
+        $isNewUser = false;
+
+        if (! $user) {
+            $user = User::create([
+                'name' => (string) ($payload['name'] ?? $payload['given_name'] ?? explode('@', $verifiedEmail)[0]),
+                'email' => $verifiedEmail,
+                'password' => Str::random(40),
+                'google_id' => $googleId,
+                'google_avatar_url' => $payload['picture'] ?? null,
+            ]);
+            $user->forceFill(['email_verified_at' => now()])->save();
+            $isNewUser = true;
+        } else {
+            $updateData = [];
+
+            if ($user->google_id !== $googleId) {
+                $updateData['google_id'] = $googleId;
+            }
+
+            if (! $user->email_verified_at) {
+                $updateData['email_verified_at'] = now();
+            }
+
+            if (! empty($payload['picture'])) {
+                $updateData['google_avatar_url'] = $payload['picture'];
+            }
+
+            if ($user->name === '' && ! empty($payload['name'])) {
+                $updateData['name'] = $payload['name'];
+            }
+
+            if ($updateData !== []) {
+                $user->forceFill($updateData)->save();
+            }
+        }
+
+        $user->forceFill([
+            'is_online' => true,
+            'last_login_ip' => $request->ip(),
+            'last_user_agent' => (string) $request->userAgent(),
+            'last_login_at' => now(),
+            'last_seen_at' => now(),
+        ])->save();
+
+        $this->recordLoginActivity($user, $request, $isNewUser ? 'google_signup_success' : 'google_login_success', [
+            'google_id' => $googleId,
+        ]);
+
+        $token = $user->createToken('auth-token')->plainTextToken;
+
+        Log::channel('activity')->info('Google sign-in completed', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'google_id' => $googleId,
+            'linked_existing_account' => ! $isNewUser,
+        ]);
+
+        return response()->json([
+            'user' => new UserResource($user),
+            'token' => $token,
+            'linked_existing_account' => ! $isNewUser,
+            'message' => $isNewUser ? 'Account created with Google.' : 'Signed in with Google.',
         ]);
     }
 

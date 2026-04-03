@@ -19,8 +19,6 @@ class SyncSmmServicesJob implements ShouldQueue
 
     public function handle(): void
     {
-        Log::channel('activity')->info('Starting SMM services sync');
-
         try {
             $crestPanelService = new CrestPanelService();
             $smmPricingService = new SmmPricingService();
@@ -29,19 +27,11 @@ class SyncSmmServicesJob implements ShouldQueue
             $services = $crestPanelService->getServices();
 
             if (empty($services)) {
-                Log::channel('activity')->warning('No services returned from CrestPanel');
                 return;
             }
 
             // Sync services and pricing
-            $results = $smmPricingService->syncServices($services);
-
-            Log::channel('activity')->info('SMM services sync completed', [
-                'total_services' => count($services),
-                'created' => $results['created'],
-                'updated' => $results['updated'],
-                'failed' => $results['failed'],
-            ]);
+            $smmPricingService->syncServices($services);
         } catch (\Exception $e) {
             Log::channel('activity')->error('SMM services sync failed', [
                 'error' => $e->getMessage(),

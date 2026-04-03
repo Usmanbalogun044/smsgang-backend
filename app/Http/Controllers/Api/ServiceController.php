@@ -101,7 +101,6 @@ class ServiceController extends Controller
 
                         $operator = [
                             'name' => (string) $operatorName,
-                            'cost' => $cost,
                             'count' => $count,
                             'final_price' => $pricingService->calculateFinalPrice(
                                 $cost,
@@ -126,7 +125,7 @@ class ServiceController extends Controller
                         return $operator;
                     })
                     ->filter()
-                    ->sortBy('cost')
+                    ->sortBy('final_price')
                     ->values();
 
                 $finalPrice = $pricingService->calculateFinalPrice(

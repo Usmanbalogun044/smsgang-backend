@@ -63,4 +63,9 @@ class Order extends Model
     {
         return $this->hasOne(Activation::class);
     }
+
+    public function twilioSubscription(): HasOne
+    {
+        return $this->hasOne(TwilioNumberSubscription::class);
+    }
 }
