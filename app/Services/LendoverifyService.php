@@ -17,6 +17,27 @@ class LendoverifyService
         $this->apiKey = config('services.lendoverify.api_key');
     }
 
+    private function resolveRedirectUrl(?string $redirectUrl): string
+    {
+        $fallback = rtrim((string) (config('app.frontend_url', config('app.url')) . '/verify-payment'), '/');
+        $candidate = trim((string) $redirectUrl);
+
+        if ($candidate === '') {
+            return $fallback;
+        }
+
+        if (app()->environment('production') && preg_match('#^https?://(localhost|127\.0\.0\.1)(:\d+)?(/|$)#i', $candidate)) {
+            Log::warning('Lendoverify redirect URL fell back from localhost in production', [
+                'candidate' => $candidate,
+                'fallback' => $fallback,
+            ]);
+
+            return $fallback;
+        }
+
+        return rtrim($candidate, '/');
+    }
+
     /**
      * Initialize a payment / Gateway Top-up
      *
@@ -24,7 +45,7 @@ class LendoverifyService
      */
     public function initializeTransaction(array $data): array
     {
-        $redirectUrl = $data['redirectUrl'] ?? config('app.verify_payment_url', config('app.url'));
+        $redirectUrl = $this->resolveRedirectUrl($data['redirectUrl'] ?? null);
 
         try {
             $response = Http::withHeaders([

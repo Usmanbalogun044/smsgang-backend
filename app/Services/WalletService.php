@@ -58,15 +58,32 @@ class WalletService
     public function addFunds(User $user, float $amount, string $reference): Transaction
     {
         return DB::transaction(function () use ($user, $amount, $reference) {
+            $wallet = $this->getLockedWallet($user);
+
             // Idempotent by reference: repeated verify callbacks should not create duplicates
             // or re-credit wallet balance.
-            $existing = Transaction::where('reference', $reference)->first();
+            $existing = Transaction::lockForUpdate()->where('reference', $reference)->first();
 
             if ($existing) {
-                return $existing;
-            }
+                if ((int) $existing->user_id !== (int) $user->id) {
+                    throw new \RuntimeException('Funding reference does not belong to this user.');
+                }
 
-            $wallet = $this->getLockedWallet($user);
+                if ($existing->status === 'paid' && $existing->verified_at) {
+                    return $existing;
+                }
+
+                $creditAmount = (float) ($existing->amount ?: $amount);
+                $wallet->increment('balance', $creditAmount);
+
+                $existing->update([
+                    'status' => 'paid',
+                    'amount' => $creditAmount,
+                    'verified_at' => $existing->verified_at ?? now(),
+                ]);
+
+                return $existing->fresh();
+            }
 
             $payload = [
                 'user_id' => $user->id,
@@ -87,7 +104,7 @@ class WalletService
             } catch (QueryException $e) {
                 $duplicateRef = ($e->errorInfo[1] ?? null) === 1062;
                 if ($duplicateRef) {
-                    return Transaction::where('reference', $reference)->firstOrFail();
+                    return Transaction::where('reference', $reference)->lockForUpdate()->firstOrFail();
                 }
                 throw $e;
             }

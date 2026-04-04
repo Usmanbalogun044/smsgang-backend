@@ -30,15 +30,48 @@ class LendoverifyWebhookController extends Controller
         return $this->transactionOperationTypeColumnExists;
     }
 
+    private function resolveReference(array $payload, array $data): ?string
+    {
+        $candidates = [
+            $data['paymentReference'] ?? null,
+            $data['payment_reference'] ?? null,
+            $data['reference'] ?? null,
+            $data['transactionReference'] ?? null,
+            $data['transaction_reference'] ?? null,
+            $data['trxref'] ?? null,
+            $data['txnRef'] ?? null,
+            $data['txn_ref'] ?? null,
+            $data['metadata']['reference'] ?? null,
+            $data['metadata']['paymentReference'] ?? null,
+            $data['meta']['reference'] ?? null,
+            $payload['paymentReference'] ?? null,
+            $payload['payment_reference'] ?? null,
+            $payload['reference'] ?? null,
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (is_string($candidate)) {
+                $candidate = trim($candidate);
+                if ($candidate !== '') {
+                    return $candidate;
+                }
+            }
+        }
+
+        return null;
+    }
+
     public function handle(Request $request): JsonResponse
     {
         $payload = $request->all();
         $event = $payload['event'] ?? null;
         $data = $payload['data'] ?? $payload;
+        $reference = $this->resolveReference($payload, is_array($data) ? $data : []);
 
         Log::channel('activity')->info('Webhook received - Wallet Funding Only', [
             'event' => $event,
-            'reference' => $data['paymentReference'] ?? 'unknown',
+            'reference' => $reference ?? 'unknown',
+            'payload_keys' => array_keys(is_array($data) ? $data : []),
         ]);
 
         $paymentStatusRaw = $data['paymentStatus'] ?? $data['status'] ?? null;
@@ -53,9 +86,12 @@ class LendoverifyWebhookController extends Controller
             return response()->json(['message' => 'Event ignored.']);
         }
 
-        $reference = $data['paymentReference'] ?? $data['reference'] ?? null;
-
         if (! $reference) {
+            Log::channel('activity')->warning('Webhook received without a wallet reference', [
+                'event' => $event,
+                'payload_keys' => array_keys(is_array($data) ? $data : []),
+            ]);
+
             return response()->json(['message' => 'No reference found.'], 400);
         }
 
@@ -76,7 +112,7 @@ class LendoverifyWebhookController extends Controller
                     return response()->json(['message' => 'Wallet transaction not found.'], 404);
                 }
 
-                return $this->handleWalletFundingWebhook($transaction, $data, $request);
+                return $this->handleWalletFundingWebhook($transaction, $data, $request, $reference);
             });
         }
 
@@ -92,7 +128,7 @@ class LendoverifyWebhookController extends Controller
     /**
      * Handle wallet funding webhook
      */
-    private function handleWalletFundingWebhook(Transaction $transaction, array $data, Request $request): JsonResponse
+    private function handleWalletFundingWebhook(Transaction $transaction, array $data, Request $request, string $reference): JsonResponse
     {
         $paymentStatusRaw = $data['paymentStatus'] ?? $data['status'] ?? null;
         $paymentStatus = is_string($paymentStatusRaw) ? strtolower(trim($paymentStatusRaw)) : null;
@@ -105,7 +141,7 @@ class LendoverifyWebhookController extends Controller
                 $transaction->update([
                     'status' => 'failed',
                     'gateway_response' => $data,
-                    'gateway_reference' => $data['paymentReference'] ?? null,
+                    'gateway_reference' => $reference,
                 ]);
 
                 Log::channel('activity')->info('Wallet funding failed', [
@@ -126,19 +162,16 @@ class LendoverifyWebhookController extends Controller
                     $amount = $amount / 100;
                 }
 
-                // Mark transaction as paid
-                $transaction->update([
-                    'status' => 'paid',
-                    'gateway_response' => $data,
-                    'gateway_reference' => $data['paymentReference'] ?? null,
-                    'verified_at' => now(),
-                    'amount' => $amount,
-                ]);
-
                 // Add funds to wallet
                 $user = User::find($transaction->user_id);
                 if ($user) {
                     $this->walletService->addFunds($user, $amount, $transaction->reference);
+
+                    $transaction->update([
+                        'gateway_response' => $data,
+                        'gateway_reference' => $reference,
+                        'amount' => $amount,
+                    ]);
 
                     Log::channel('activity')->info('Wallet funding successful', [
                         'transaction_id' => $transaction->id,
