@@ -27,6 +27,7 @@ class AuthController extends Controller
 {
     private const OTP_TTL_MINUTES = 10;
     private const PASSWORD_RESET_OTP_TTL_MINUTES = 15;
+    private const PENDING_SIGNUP_TTL_MINUTES = 30;
 
     private function recordLoginActivity(?User $user, Request $request, string $eventType, array $context = []): void
     {
@@ -43,6 +44,11 @@ class AuthController extends Controller
     private function otpCacheKey(string $email): string
     {
         return 'email_verification_otp:'.strtolower(trim($email));
+    }
+
+    private function pendingSignupDataCacheKey(string $email): string
+    {
+        return 'pending_signup_data:'.strtolower(trim($email));
     }
 
     private function passwordResetOtpCacheKey(string $email): string
@@ -95,18 +101,30 @@ class AuthController extends Controller
 
     public function register(RegisterRequest $request): JsonResponse
     {
-        $user = User::create($request->validated());
-        $this->sendVerificationOtp($user->email);
+        $validated = $request->validated();
+        $normalizedEmail = strtolower(trim((string) $validated['email']));
 
-        Log::channel('activity')->info('User registered', [
-            'user_id' => $user->id,
-            'email' => $user->email,
-        ]);
+        /** @var User|null $existing */
+        $existing = User::whereRaw('LOWER(email) = ?', [$normalizedEmail])->first();
+
+        if ($existing) {
+            return response()->json([
+                'message' => 'An account with this email already exists. Please sign in.',
+            ], 422);
+        }
+
+        Cache::put($this->pendingSignupDataCacheKey($normalizedEmail), [
+            'name' => (string) $validated['name'],
+            'email' => $normalizedEmail,
+            'password' => (string) $validated['password'],
+        ], now()->addMinutes(self::PENDING_SIGNUP_TTL_MINUTES));
+
+        $this->sendVerificationOtp($normalizedEmail);
 
         return response()->json([
-            'message' => 'Account created. Check your email for the verification code.',
+            'message' => 'Verification code sent. Complete verification to create your account.',
             'requires_verification' => true,
-            'email' => $user->email,
+            'email' => $normalizedEmail,
         ], 201);
     }
 
@@ -117,28 +135,50 @@ class AuthController extends Controller
             'otp' => ['required', 'digits:6'],
         ]);
 
-        /** @var User|null $user */
-        $user = User::where('email', $validated['email'])->first();
-        if (! $user) {
-            return response()->json(['message' => 'User not found.'], 404);
-        }
-
-        if ($user->email_verified_at) {
-            $token = $user->createToken('auth-token')->plainTextToken;
-            return response()->json([
-                'message' => 'Email already verified.',
-                'user' => new UserResource($user),
-                'token' => $token,
-            ]);
-        }
-
-        $otp = Cache::get($this->otpCacheKey($validated['email']));
+        $normalizedEmail = strtolower(trim($validated['email']));
+        $otp = Cache::get($this->otpCacheKey($normalizedEmail));
         if (! $otp || $otp !== $validated['otp']) {
             return response()->json(['message' => 'Invalid or expired OTP.'], 422);
         }
 
-        $user->forceFill(['email_verified_at' => now()])->save();
-        Cache::forget($this->otpCacheKey($validated['email']));
+        /** @var User|null $user */
+        $user = User::whereRaw('LOWER(email) = ?', [$normalizedEmail])->first();
+
+        if ($user) {
+            if ($user->email_verified_at) {
+                $token = $user->createToken('auth-token')->plainTextToken;
+                Cache::forget($this->otpCacheKey($normalizedEmail));
+
+                return response()->json([
+                    'message' => 'Email already verified.',
+                    'user' => new UserResource($user),
+                    'token' => $token,
+                ]);
+            }
+
+            $user->forceFill(['email_verified_at' => now()])->save();
+        } else {
+            $pendingSignup = Cache::get($this->pendingSignupDataCacheKey($normalizedEmail));
+            if (! is_array($pendingSignup)) {
+                return response()->json(['message' => 'Signup session expired. Please register again.'], 422);
+            }
+
+            $user = User::create([
+                'name' => (string) ($pendingSignup['name'] ?? ''),
+                'email' => $normalizedEmail,
+                'password' => (string) ($pendingSignup['password'] ?? ''),
+            ]);
+
+            $user->forceFill(['email_verified_at' => now()])->save();
+
+            Log::channel('activity')->info('User registered after OTP verification', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+            ]);
+        }
+
+        Cache::forget($this->otpCacheKey($normalizedEmail));
+        Cache::forget($this->pendingSignupDataCacheKey($normalizedEmail));
 
         $token = $user->createToken('auth-token')->plainTextToken;
 
@@ -155,17 +195,29 @@ class AuthController extends Controller
             'email' => ['required', 'email'],
         ]);
 
+        $normalizedEmail = strtolower(trim($validated['email']));
+
         /** @var User|null $user */
-        $user = User::where('email', $validated['email'])->first();
-        if (! $user) {
-            return response()->json(['message' => 'User not found.'], 404);
+        $user = User::whereRaw('LOWER(email) = ?', [$normalizedEmail])->first();
+
+        if ($user) {
+            if ($user->email_verified_at) {
+                return response()->json(['message' => 'Email already verified.'], 422);
+            }
+
+            $this->sendVerificationOtp($user->email);
+
+            return response()->json([
+                'message' => 'Verification code sent. Please check your email.',
+            ]);
         }
 
-        if ($user->email_verified_at) {
-            return response()->json(['message' => 'Email already verified.'], 422);
+        $pendingSignup = Cache::get($this->pendingSignupDataCacheKey($normalizedEmail));
+        if (! is_array($pendingSignup)) {
+            return response()->json(['message' => 'No pending signup found for this email.'], 404);
         }
 
-        $this->sendVerificationOtp($user->email);
+        $this->sendVerificationOtp($normalizedEmail);
 
         return response()->json([
             'message' => 'Verification code sent. Please check your email.',

@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -48,7 +49,85 @@ class CheckBotMiddleware
             return response()->json(['message' => 'Access denied.'], 403);
         }
 
+        if ($this->shouldVerifyTurnstile($request)) {
+            $turnstileResult = $this->verifyTurnstileToken($request, $ip);
+            if ($turnstileResult instanceof Response) {
+                return $turnstileResult;
+            }
+        }
+
         return $next($request);
+    }
+
+    private function shouldVerifyTurnstile(Request $request): bool
+    {
+        if (! $request->isMethod('post')) {
+            return false;
+        }
+
+        // Enforce Turnstile on signup endpoint. Keep other auth endpoints unchanged for now.
+        return $request->is('api/register');
+    }
+
+    private function verifyTurnstileToken(Request $request, string $ip): Response|bool
+    {
+        $secret = (string) config('services.cloudflare.turnstile_secret', '');
+        if ($secret === '') {
+            return true;
+        }
+
+        $token = (string) $request->input('cf_turnstile_token', '');
+        if ($token === '') {
+            $this->registerSuspiciousAttempt($ip, 'turnstile_missing');
+            return response()->json(['message' => 'Complete human verification and try again.'], 422);
+        }
+
+        try {
+            $response = Http::asForm()
+                ->timeout(10)
+                ->post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
+                    'secret' => $secret,
+                    'response' => $token,
+                    'remoteip' => $ip,
+                ]);
+
+            if (! $response->successful()) {
+                $this->registerSuspiciousAttempt($ip, 'turnstile_http_failed', ['status' => $response->status()]);
+                return response()->json(['message' => 'Human verification failed. Please try again.'], 422);
+            }
+
+            $payload = $response->json();
+            $success = (bool) ($payload['success'] ?? false);
+
+            $expectedHostname = strtolower(trim((string) config('services.cloudflare.turnstile_hostname', '')));
+            $actualHostname = strtolower(trim((string) ($payload['hostname'] ?? '')));
+
+            if ($expectedHostname !== '' && $actualHostname !== '' && $expectedHostname !== $actualHostname) {
+                $this->registerSuspiciousAttempt($ip, 'turnstile_hostname_mismatch', [
+                    'expected' => $expectedHostname,
+                    'actual' => $actualHostname,
+                ]);
+
+                return response()->json(['message' => 'Human verification failed.'], 422);
+            }
+
+            if (! $success) {
+                $this->registerSuspiciousAttempt($ip, 'turnstile_invalid', [
+                    'error_codes' => $payload['error-codes'] ?? [],
+                ]);
+
+                return response()->json(['message' => 'Human verification failed.'], 422);
+            }
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::channel('activity')->warning('Turnstile verification exception', [
+                'ip' => $ip,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json(['message' => 'Human verification unavailable. Please try again.'], 422);
+        }
     }
 
     private function isManuallyBlockedIp(string $ip): bool

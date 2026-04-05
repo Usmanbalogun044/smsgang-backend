@@ -39,6 +39,12 @@ return [
         'client_id' => env('GOOGLE_CLIENT_ID'),
     ],
 
+    'cloudflare' => [
+        'turnstile_site_key' => env('CLOUDFLARE_TURNSTILE_SITE_KEY'),
+        'turnstile_secret' => env('CLOUDFLARE_TURNSTILE_SECRET'),
+        'turnstile_hostname' => env('CLOUDFLARE_TURNSTILE_HOSTNAME'),
+    ],
+
     'fivesim' => [
         'base_url' => env('FIVESIM_BASE_URL', 'https://5sim.net/v1'),
         'api_key' => env('FIVESIM_API_KEY'),
