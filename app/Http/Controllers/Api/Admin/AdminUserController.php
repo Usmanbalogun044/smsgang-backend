@@ -13,6 +13,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Models\UserLoginActivity;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Log;
 
@@ -20,7 +21,7 @@ class AdminUserController extends Controller
 {
     public function index(): AnonymousResourceCollection
     {
-        $query = User::query();
+        $query = User::query()->with('wallet');
 
         if (request()->has('search')) {
             $search = request('search');
@@ -49,6 +50,8 @@ class AdminUserController extends Controller
 
     public function show(User $user): JsonResponse
     {
+        $user->loadMissing('wallet');
+
         $ordersCount = Order::where('user_id', $user->id)->count();
         $activationsCount = Activation::whereHas('order', fn ($q) => $q->where('user_id', $user->id))->count();
         $smmOrdersCount = SmmOrder::where('user_id', $user->id)->count();
@@ -127,6 +130,34 @@ class AdminUserController extends Controller
 
         return response()->json([
             'message' => 'User deleted successfully.',
+        ]);
+    }
+
+    public function impersonate(Request $request, User $user): JsonResponse
+    {
+        if ($user->status !== UserStatus::Active) {
+            return response()->json([
+                'message' => 'Cannot impersonate a suspended user.',
+            ], 422);
+        }
+
+        $admin = $request->user();
+        $tokenName = sprintf('admin-impersonation:%d->%d:%d', $admin?->id, $user->id, now()->timestamp);
+        $plainTextToken = $user->createToken($tokenName, ['*'])->plainTextToken;
+
+        Log::channel('activity')->warning('Admin impersonation token issued', [
+            'admin_id' => $admin?->id,
+            'impersonated_user_id' => $user->id,
+            'impersonated_user_email' => $user->email,
+            'ip' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json([
+            'message' => 'Impersonation session created.',
+            'token' => $plainTextToken,
+            'user' => (new UserResource($user))->toArray($request),
+            'redirect_url' => rtrim((string) config('app.frontend_url', 'http://localhost:3000'), '/').'/admin-impersonate',
         ]);
     }
 }

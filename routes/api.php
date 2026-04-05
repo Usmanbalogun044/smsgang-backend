@@ -166,6 +166,7 @@ Route::middleware(['auth:sanctum', 'active', 'admin', 'throttle:api'])
         Route::get('/users/stats', [AdminUserController::class, 'stats']);
         Route::get('/users', [AdminUserController::class, 'index']);
         Route::get('/users/{user}', [AdminUserController::class, 'show']);
+        Route::post('/users/{user}/impersonate', [AdminUserController::class, 'impersonate']);
         Route::put('/users/{user}', [AdminUserController::class, 'update']);
         Route::delete('/users/{user}', [AdminUserController::class, 'destroy']);
 
