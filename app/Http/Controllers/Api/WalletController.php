@@ -228,6 +228,7 @@ class WalletController extends Controller
                 'data' => $transactions->map(fn ($t) => [
                     'id' => $t->id,
                     'type' => $t->type,
+                    'operation_type' => $t->operation_type ?? ($t->type === 'credit' ? 'wallet_fund' : 'wallet_debit'),
                     'operation' => $t->operation_type ?? ($t->type === 'credit' ? 'wallet_fund' : 'wallet_debit'),
                     'amount' => (string) $t->amount,
                     'reference' => $t->reference,
