@@ -100,9 +100,31 @@ class AdminUserController extends Controller
 
     public function update(UpdateUserRequest $request, User $user): UserResource
     {
-        $user->update($request->validated());
+        $validated = $request->validated();
 
-        if (($request->validated()['status'] ?? null) === UserStatus::Suspended->value) {
+        $walletBalance = null;
+        if (array_key_exists('wallet_balance', $validated)) {
+            $walletBalance = (float) $validated['wallet_balance'];
+            unset($validated['wallet_balance']);
+        }
+
+        if (array_key_exists('is_email_verified', $validated)) {
+            $user->forceFill([
+                'email_verified_at' => $validated['is_email_verified'] ? now() : null,
+            ])->save();
+            unset($validated['is_email_verified']);
+        }
+
+        $user->update($validated);
+
+        if ($walletBalance !== null) {
+            $user->wallet()->updateOrCreate(
+                ['user_id' => $user->id],
+                ['balance' => $walletBalance]
+            );
+        }
+
+        if (($validated['status'] ?? null) === UserStatus::Suspended->value) {
             $user->tokens()->delete();
             $user->forceFill([
                 'is_online' => false,
@@ -112,8 +134,13 @@ class AdminUserController extends Controller
 
         Log::channel('activity')->info('Admin updated user', [
             'user_id' => $user->id,
-            'changes' => $request->validated(),
+            'changes' => [
+                ...$validated,
+                ...(isset($walletBalance) ? ['wallet_balance' => $walletBalance] : []),
+            ],
         ]);
+
+        $user->loadMissing('wallet');
 
         return new UserResource($user);
     }
@@ -157,7 +184,7 @@ class AdminUserController extends Controller
             'message' => 'Impersonation session created.',
             'token' => $plainTextToken,
             'user' => (new UserResource($user))->toArray($request),
-            'redirect_url' => rtrim((string) config('app.frontend_url', 'http://localhost:3000'), '/').'/admin-impersonate',
+            'redirect_url' => rtrim((string) config('app.frontend_url', 'http://localhost:3000'), '/'),
         ]);
     }
 }
