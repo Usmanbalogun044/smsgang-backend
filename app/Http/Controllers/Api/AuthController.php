@@ -26,6 +26,7 @@ use Illuminate\Validation\ValidationException;
 class AuthController extends Controller
 {
     private const OTP_TTL_MINUTES = 10;
+    private const PASSWORD_RESET_OTP_TTL_MINUTES = 15;
 
     private function recordLoginActivity(?User $user, Request $request, string $eventType, array $context = []): void
     {
@@ -44,6 +45,11 @@ class AuthController extends Controller
         return 'email_verification_otp:'.strtolower(trim($email));
     }
 
+    private function passwordResetOtpCacheKey(string $email): string
+    {
+        return 'password_reset_otp:'.strtolower(trim($email));
+    }
+
     private function sendVerificationOtp(string $email): void
     {
         $otp = (string) random_int(100000, 999999);
@@ -53,6 +59,30 @@ class AuthController extends Controller
             Mail::to($email)->queue(new EmailVerificationOtpMail($otp, self::OTP_TTL_MINUTES));
         } catch (Throwable $exception) {
             Log::error('Failed to send verification OTP email', [
+                'email' => $email,
+                'error' => $exception->getMessage(),
+            ]);
+
+            if (! App::environment('production')) {
+                throw $exception;
+            }
+        }
+    }
+
+    private function sendPasswordResetOtp(string $email): void
+    {
+        $otp = (string) random_int(100000, 999999);
+        Cache::put($this->passwordResetOtpCacheKey($email), $otp, now()->addMinutes(self::PASSWORD_RESET_OTP_TTL_MINUTES));
+
+        try {
+            Mail::send('emails.password-reset-otp', [
+                'otp' => $otp,
+                'ttlMinutes' => self::PASSWORD_RESET_OTP_TTL_MINUTES,
+            ], function ($message) use ($email): void {
+                $message->to($email)->subject('SMSGang Password Reset Code');
+            });
+        } catch (Throwable $exception) {
+            Log::error('Failed to send password reset OTP email', [
                 'email' => $email,
                 'error' => $exception->getMessage(),
             ]);
@@ -387,6 +417,63 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'Password updated successfully.',
+        ]);
+    }
+
+    public function forgotPassword(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email'],
+        ]);
+
+        /** @var User|null $user */
+        $user = User::whereRaw('LOWER(email) = ?', [strtolower(trim($validated['email']))])->first();
+
+        if ($user) {
+            $this->sendPasswordResetOtp($user->email);
+        }
+
+        return response()->json([
+            'message' => 'If the email exists, a password reset code has been sent.',
+            'email' => $validated['email'],
+        ]);
+    }
+
+    public function resetPassword(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email'],
+            'otp' => ['required', 'digits:6'],
+            'new_password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        $normalizedEmail = strtolower(trim($validated['email']));
+
+        /** @var User|null $user */
+        $user = User::whereRaw('LOWER(email) = ?', [$normalizedEmail])->first();
+        if (! $user) {
+            return response()->json(['message' => 'Invalid or expired reset code.'], 422);
+        }
+
+        $otp = Cache::get($this->passwordResetOtpCacheKey($normalizedEmail));
+        if (! $otp || $otp !== $validated['otp']) {
+            return response()->json(['message' => 'Invalid or expired reset code.'], 422);
+        }
+
+        $user->update([
+            'password' => $validated['new_password'],
+        ]);
+
+        Cache::forget($this->passwordResetOtpCacheKey($normalizedEmail));
+        $user->tokens()->delete();
+
+        Log::channel('activity')->info('User password reset via OTP', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+        ]);
+
+        return response()->json([
+            'message' => 'Password reset successfully. Please sign in again.',
         ]);
     }
 }

@@ -37,6 +37,8 @@ Route::middleware(['throttle:auth', 'check.bot'])->group(function () {
     Route::post('/google', [AuthController::class, 'google']);
     Route::post('/verify-email-otp', [AuthController::class, 'verifyEmailOtp'])->middleware('throttle:otp-verify');
     Route::post('/resend-email-otp', [AuthController::class, 'resendEmailOtp'])->middleware('throttle:otp-resend');
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:otp-resend');
+    Route::post('/reset-password', [AuthController::class, 'resetPassword'])->middleware('throttle:otp-verify');
 });
 
 // Public catalog routes
