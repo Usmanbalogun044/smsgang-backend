@@ -159,6 +159,92 @@ class ServiceController extends Controller
         return response()->json(['data' => $results]);
     }
 
+    public function operatorsForServiceCountry(Service $service, Country $country, PricingService $pricingService): JsonResponse
+    {
+        $row = ServicePrice::query()
+            ->with('country:id,name,code,flag,is_active')
+            ->where('service_id', $service->id)
+            ->where('country_id', $country->id)
+            ->where('is_active', true)
+            ->where('available_count', '>', 0)
+            ->whereHas('country', fn ($query) => $query->where('is_active', true))
+            ->firstOrFail();
+
+        $operatorsRaw = is_array($row->provider_payload) ? $row->provider_payload : [];
+        $operators = collect($operatorsRaw)
+            ->map(function ($info, $operatorName) use ($pricingService, $row) {
+                if (! is_array($info)) {
+                    return null;
+                }
+
+                $cost = (float) ($info['cost'] ?? 0);
+                $count = (int) ($info['count'] ?? 0);
+                if ($cost <= 0) {
+                    return null;
+                }
+
+                $operator = [
+                    'name' => (string) $operatorName,
+                    'count' => $count,
+                    'final_price' => $pricingService->calculateFinalPrice(
+                        $cost,
+                        $row->markup_type,
+                        (float) $row->markup_value,
+                    ),
+                ];
+
+                if (isset($info['rate'])) {
+                    $operator['success_rates'] = [
+                        'instant' => (float) ($info['rate'] ?? 0),
+                        '1h' => (float) ($info['rate1'] ?? 0),
+                        '3h' => (float) ($info['rate3'] ?? 0),
+                        '24h' => (float) ($info['rate24'] ?? 0),
+                        '72h' => (float) ($info['rate72'] ?? 0),
+                        '168h' => (float) ($info['rate168'] ?? 0),
+                        '30d' => (float) ($info['rate720'] ?? 0),
+                    ];
+                }
+
+                return $operator;
+            })
+            ->filter()
+            ->sortBy(fn (array $operator) => [
+                -1 * ((float) ($operator['success_rates']['1h'] ?? $operator['success_rates']['instant'] ?? 0)),
+                (float) $operator['final_price'],
+                -1 * ((int) $operator['count']),
+            ])
+            ->values();
+
+        $bestOperator = $operators->first();
+
+        return response()->json([
+            'data' => [
+                'id' => $row->id,
+                'service' => [
+                    'id' => $service->id,
+                    'name' => $service->name,
+                    'slug' => $service->slug,
+                ],
+                'country' => [
+                    'id' => $country->id,
+                    'name' => $country->name,
+                    'code' => strtoupper($country->code),
+                    'flag' => $country->flag,
+                ],
+                'final_price' => $pricingService->calculateFinalPrice(
+                    (float) $row->provider_price,
+                    $row->markup_type,
+                    (float) $row->markup_value,
+                ),
+                'available_count' => (int) $row->available_count,
+                'operator_count' => (int) $operators->count(),
+                'best_operator' => $bestOperator,
+                'operators' => $operators,
+                'is_active' => (bool) $row->is_active,
+            ],
+        ]);
+    }
+
     public function servicesForCountry(Country $country): AnonymousResourceCollection
     {
         // Return active services (country filtering can be added later)

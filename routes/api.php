@@ -44,6 +44,7 @@ Route::middleware('throttle:api')->group(function () {
     Route::get('/services', [ServiceController::class, 'index']);
     Route::get('/countries', [ServiceController::class, 'countries']);
     Route::get('/services/{service}/countries', [ServiceController::class, 'countriesForService']);
+    Route::get('/services/{service}/countries/{country}/operators', [ServiceController::class, 'operatorsForServiceCountry']);
     Route::get('/countries/{country}/services', [ServiceController::class, 'servicesForCountry']);
 
     // Temporary open endpoints for manual service image ingestion.

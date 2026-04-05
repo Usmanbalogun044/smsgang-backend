@@ -61,11 +61,44 @@ class LendoverifyWebhookController extends Controller
         return null;
     }
 
+    private function resolveEventType(array $payload): ?string
+    {
+        $event = $payload['event'] ?? $payload['eventType'] ?? null;
+
+        return is_string($event) && trim($event) !== ''
+            ? trim($event)
+            : null;
+    }
+
+    private function resolvePaymentStatus(array $payload, array $data): ?string
+    {
+        $statusRaw =
+            $data['paymentStatus']
+            ?? $data['payment_status']
+            ?? $data['status']
+            ?? $data['payment']['status']
+            ?? $payload['paymentStatus']
+            ?? $payload['payment_status']
+            ?? $payload['status']
+            ?? null;
+
+        if (! is_string($statusRaw)) {
+            return null;
+        }
+
+        $status = strtolower(trim($statusRaw));
+
+        return $status !== '' ? $status : null;
+    }
+
     public function handle(Request $request): JsonResponse
     {
         $payload = $request->all();
-        $event = $payload['event'] ?? null;
-        $data = $payload['data'] ?? $payload;
+        $event = $this->resolveEventType($payload);
+        $data = $payload['data'] ?? $payload['eventData'] ?? $payload;
+        if (! is_array($data)) {
+            $data = [];
+        }
         $reference = $this->resolveReference($payload, is_array($data) ? $data : []);
 
         Log::channel('activity')->info('Webhook received - Wallet Funding Only', [
@@ -74,15 +107,14 @@ class LendoverifyWebhookController extends Controller
             'payload_keys' => array_keys(is_array($data) ? $data : []),
         ]);
 
-        $paymentStatusRaw = $data['paymentStatus'] ?? $data['status'] ?? null;
-        $paymentStatus = is_string($paymentStatusRaw) ? strtolower(trim($paymentStatusRaw)) : null;
+        $paymentStatus = $this->resolvePaymentStatus($payload, $data);
 
         $successEvent = in_array($event, ['collection.successful', 'payment.successful'], true);
         $failedEvent = in_array($event, ['collection.failed', 'payment.failed'], true);
         $successStatus = in_array($paymentStatus, ['paid', 'success', 'successful', 'completed'], true);
         $failedStatus = in_array($paymentStatus, ['failed', 'cancelled', 'canceled', 'declined', 'abandoned'], true);
 
-        if (! $successEvent && ! $failedEvent && ! $successStatus && ! $failedStatus && empty($data['success'])) {
+        if (! $successEvent && ! $failedEvent && ! $successStatus && ! $failedStatus && empty($data['success']) && empty($payload['success'])) {
             return response()->json(['message' => 'Event ignored.']);
         }
 
@@ -130,8 +162,7 @@ class LendoverifyWebhookController extends Controller
      */
     private function handleWalletFundingWebhook(Transaction $transaction, array $data, Request $request, string $reference): JsonResponse
     {
-        $paymentStatusRaw = $data['paymentStatus'] ?? $data['status'] ?? null;
-        $paymentStatus = is_string($paymentStatusRaw) ? strtolower(trim($paymentStatusRaw)) : null;
+        $paymentStatus = $this->resolvePaymentStatus([], $data);
         $failedStatus = in_array($paymentStatus, ['failed', 'cancelled', 'canceled', 'declined', 'abandoned'], true);
         $successStatus = in_array($paymentStatus, ['paid', 'success', 'successful', 'completed'], true);
 

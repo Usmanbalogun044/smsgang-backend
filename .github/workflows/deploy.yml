@@ -145,6 +145,7 @@ jobs:
 
             echo "⚙️ Caching config and routes..."
             docker compose --env-file .env -f docker-compose.prod.yml exec -T smsgang-app php artisan config:cache
+            docker compose --env-file .env -f docker-compose.prod.yml exec -T smsgang-app php artisan route:clear
             docker compose --env-file .env -f docker-compose.prod.yml exec -T smsgang-app php artisan route:cache
 
             echo "🧹 Cleaning up old images..."
