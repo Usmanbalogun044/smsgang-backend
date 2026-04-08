@@ -528,4 +528,24 @@ class AuthController extends Controller
             'message' => 'Password reset successfully. Please sign in again.',
         ]);
     }
+
+    public function completeOnboarding(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $user->update([
+            'has_completed_onboarding' => true,
+            'onboarding_completed_at' => now(),
+        ]);
+
+        Log::channel('activity')->info('User completed onboarding', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+        ]);
+
+        return response()->json([
+            'message' => 'Onboarding completed successfully.',
+            'user' => new UserResource($user->fresh()),
+        ]);
+    }
 }

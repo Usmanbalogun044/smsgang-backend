@@ -74,6 +74,8 @@ class ServiceController extends Controller
      */
     public function countriesForService(Service $service, PricingService $pricingService): JsonResponse
     {
+        $authUser = auth('sanctum')->user();
+
         $rows = ServicePrice::query()
             ->with('country:id,name,code,flag,is_active')
             ->where('service_id', $service->id)
@@ -83,12 +85,12 @@ class ServiceController extends Controller
             ->get();
 
         $results = $rows
-            ->map(function (ServicePrice $row) use ($service, $pricingService): array {
+            ->map(function (ServicePrice $row) use ($service, $pricingService, $authUser): array {
                 $country = $row->country;
 
                 $operatorsRaw = is_array($row->provider_payload) ? $row->provider_payload : [];
                 $operators = collect($operatorsRaw)
-                    ->map(function ($info, $operatorName) use ($pricingService, $row) {
+                    ->map(function ($info, $operatorName) use ($pricingService, $row, $service, $country, $authUser) {
                         if (! is_array($info)) {
                             return null;
                         }
@@ -106,6 +108,9 @@ class ServiceController extends Controller
                                 $cost,
                                 $row->markup_type,
                                 (float) $row->markup_value,
+                                $authUser,
+                                $service,
+                                $country,
                             ),
                         ];
 
@@ -132,6 +137,9 @@ class ServiceController extends Controller
                     (float) $row->provider_price,
                     $row->markup_type,
                     (float) $row->markup_value,
+                    $authUser,
+                    $service,
+                    $country,
                 );
 
                 return [
@@ -161,6 +169,8 @@ class ServiceController extends Controller
 
     public function operatorsForServiceCountry(Service $service, Country $country, PricingService $pricingService): JsonResponse
     {
+        $authUser = auth('sanctum')->user();
+
         $row = ServicePrice::query()
             ->with('country:id,name,code,flag,is_active')
             ->where('service_id', $service->id)
@@ -172,7 +182,7 @@ class ServiceController extends Controller
 
         $operatorsRaw = is_array($row->provider_payload) ? $row->provider_payload : [];
         $operators = collect($operatorsRaw)
-            ->map(function ($info, $operatorName) use ($pricingService, $row) {
+            ->map(function ($info, $operatorName) use ($pricingService, $row, $service, $country, $authUser) {
                 if (! is_array($info)) {
                     return null;
                 }
@@ -190,6 +200,9 @@ class ServiceController extends Controller
                         $cost,
                         $row->markup_type,
                         (float) $row->markup_value,
+                        $authUser,
+                        $service,
+                        $country,
                     ),
                 ];
 
@@ -235,6 +248,9 @@ class ServiceController extends Controller
                     (float) $row->provider_price,
                     $row->markup_type,
                     (float) $row->markup_value,
+                    $authUser,
+                    $service,
+                    $country,
                 ),
                 'available_count' => (int) $row->available_count,
                 'operator_count' => (int) $operators->count(),

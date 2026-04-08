@@ -7,6 +7,8 @@ use App\Models\Country;
 use App\Models\Service;
 use App\Models\ServicePrice;
 use App\Models\Setting;
+use App\Models\User;
+use App\Models\VendorVirtualServiceMarkup;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -16,7 +18,14 @@ class PricingService
     /**
      * Calculate final price in NGN with volatility protection.
      */
-    public function calculateFinalPrice(float $providerPriceUsd, MarkupType $markupType, float $markupValue): float
+    public function calculateFinalPrice(
+        float $providerPriceUsd,
+        MarkupType $markupType,
+        float $markupValue,
+        ?User $user = null,
+        ?Service $service = null,
+        ?Country $country = null,
+    ): float
     {
         // 1. Fetch settings from DB with optimized defaults
         $globalMarkup = (float) Setting::get('global_markup_fixed', 150);
@@ -46,8 +55,44 @@ class PricingService
             default => $baseNgn + $markupValue,
         };
 
+        if ($user?->isVendor() && $service) {
+            $vendorMarkup = VendorVirtualServiceMarkup::query()
+                ->where('user_id', $user->id)
+                ->where('service_id', $service->id)
+                ->where('is_active', true)
+                ->when(
+                    $country,
+                    fn ($query) => $query->where(function ($subQuery) use ($country) {
+                        $subQuery->where('country_id', $country->id)
+                            ->orWhereNull('country_id');
+                    }),
+                    fn ($query) => $query->whereNull('country_id')
+                )
+                ->orderByRaw('country_id is null')
+                ->first();
+
+            if ($vendorMarkup) {
+                $vendorType = strtolower((string) $vendorMarkup->markup_type);
+                $vendorValue = (float) $vendorMarkup->markup_value;
+
+                $finalNgn = $vendorType === 'percent'
+                    ? ($finalNgn * (1 + ($vendorValue / 100)))
+                    : ($finalNgn + $vendorValue);
+            } elseif ($user->vendor_virtual_markup_value !== null && $user->vendor_virtual_markup_type !== null) {
+                $vendorType = strtolower((string) $user->vendor_virtual_markup_type);
+                $vendorValue = (float) $user->vendor_virtual_markup_value;
+
+                $finalNgn = $vendorType === 'percent'
+                    ? ($finalNgn * (1 + ($vendorValue / 100)))
+                    : ($finalNgn + $vendorValue);
+            }
+
+            $vendorGlobalMarkup = (float) Setting::get('vendor_global_markup_virtual', 0);
+            $finalNgn += $vendorGlobalMarkup;
+        }
+
         // 5. Standard rounding to 2 decimal places instead of aggressive 50 rounding
-        return round($finalNgn, 2);
+        return round(max(0, $finalNgn), 2);
     }
 
     /**

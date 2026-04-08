@@ -24,6 +24,10 @@ class UpdateUserRequest extends FormRequest
             'email' => ['sometimes', 'email', 'max:255', Rule::unique('users', 'email')->ignore($userId)],
             'role' => ['sometimes', Rule::in(array_column(UserRole::cases(), 'value'))],
             'status' => ['sometimes', Rule::in(array_column(UserStatus::cases(), 'value'))],
+            'vendor_virtual_markup_type' => ['nullable', 'sometimes', Rule::in(['fixed', 'percent'])],
+            'vendor_virtual_markup_value' => ['nullable', 'sometimes', 'numeric', 'min:0'],
+            'vendor_smm_markup_type' => ['nullable', 'sometimes', Rule::in(['fixed', 'percent'])],
+            'vendor_smm_markup_value' => ['nullable', 'sometimes', 'numeric', 'min:0'],
             'wallet_balance' => ['sometimes', 'numeric', 'min:0'],
             'is_email_verified' => ['sometimes', 'boolean'],
         ];

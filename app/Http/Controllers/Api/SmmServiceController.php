@@ -21,6 +21,7 @@ class SmmServiceController extends Controller
     public function index(Request $request): JsonResponse
     {
         try {
+            $authUser = $request->user();
             $category = $request->query('category');
             $type = $request->query('type');
             $search = $request->query('search');
@@ -48,8 +49,8 @@ class SmmServiceController extends Controller
                 ->values();
 
             return response()->json([
-                'data' => $services->getCollection()->map(function ($service) {
-                    $priceData = $this->smmPricingService->calculatePrice($service, 1);
+                'data' => $services->getCollection()->map(function ($service) use ($authUser) {
+                    $priceData = $this->smmPricingService->calculatePrice($service, 1, $authUser);
 
                     return [
                         'id' => $service->id,
@@ -96,7 +97,7 @@ class SmmServiceController extends Controller
                 ], 404);
             }
 
-            $priceData = $this->smmPricingService->calculatePrice($service, 1);
+            $priceData = $this->smmPricingService->calculatePrice($service, 1, request()->user());
 
             return response()->json([
                 'id' => $service->id,

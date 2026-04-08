@@ -19,6 +19,8 @@ class AdminSettingsController extends Controller
             'twilio_markup' => (float) Setting::get('twilio_markup_value', 0),
             'twilio_markup_type' => Setting::get('twilio_markup_type', 'fixed'),
             'twilio_default_monthly_price_usd' => (float) Setting::get('twilio_default_monthly_price_usd', 1.2),
+            'vendor_global_markup_virtual' => (float) Setting::get('vendor_global_markup_virtual', 0),
+            'vendor_global_markup_smm' => (float) Setting::get('vendor_global_markup_smm', 0),
         ]);
     }
 
@@ -31,6 +33,8 @@ class AdminSettingsController extends Controller
             'twilio_markup' => 'sometimes|numeric|min:0',
             'twilio_markup_type' => 'sometimes|string|in:fixed,percentage',
             'twilio_default_monthly_price_usd' => 'sometimes|numeric|min:0.01',
+            'vendor_global_markup_virtual' => 'sometimes|numeric|min:0',
+            'vendor_global_markup_smm' => 'sometimes|numeric|min:0',
         ]);
 
         if (array_key_exists('global_markup', $validated)) {
@@ -57,6 +61,14 @@ class AdminSettingsController extends Controller
             Setting::set('twilio_default_monthly_price_usd', $validated['twilio_default_monthly_price_usd']);
         }
 
+        if (array_key_exists('vendor_global_markup_virtual', $validated)) {
+            Setting::set('vendor_global_markup_virtual', $validated['vendor_global_markup_virtual']);
+        }
+
+        if (array_key_exists('vendor_global_markup_smm', $validated)) {
+            Setting::set('vendor_global_markup_smm', $validated['vendor_global_markup_smm']);
+        }
+
         Log::channel('activity')->info('Admin updated global settings', $validated);
 
         return response()->json([
@@ -67,6 +79,8 @@ class AdminSettingsController extends Controller
             'twilio_markup' => (float) Setting::get('twilio_markup_value', 0),
             'twilio_markup_type' => (string) Setting::get('twilio_markup_type', 'fixed'),
             'twilio_default_monthly_price_usd' => (float) Setting::get('twilio_default_monthly_price_usd', 1.2),
+            'vendor_global_markup_virtual' => (float) Setting::get('vendor_global_markup_virtual', 0),
+            'vendor_global_markup_smm' => (float) Setting::get('vendor_global_markup_smm', 0),
         ]);
     }
 }

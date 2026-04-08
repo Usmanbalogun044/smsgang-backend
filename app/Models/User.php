@@ -24,6 +24,12 @@ class User extends Authenticatable
         'google_avatar_url',
         'role',
         'status',
+        'has_completed_onboarding',
+        'onboarding_completed_at',
+        'vendor_virtual_markup_type',
+        'vendor_virtual_markup_value',
+        'vendor_smm_markup_type',
+        'vendor_smm_markup_value',
         'is_online',
         'last_login_ip',
         'last_user_agent',
@@ -49,6 +55,10 @@ class User extends Authenticatable
             'password' => 'hashed',
             'role' => UserRole::class,
             'status' => UserStatus::class,
+            'vendor_virtual_markup_value' => 'decimal:4',
+            'vendor_smm_markup_value' => 'decimal:4',
+            'has_completed_onboarding' => 'boolean',
+            'onboarding_completed_at' => 'datetime',
             'is_online' => 'boolean',
             'last_login_at' => 'datetime',
             'last_seen_at' => 'datetime',
@@ -87,9 +97,24 @@ class User extends Authenticatable
         return $this->hasMany(TwilioMessage::class);
     }
 
+    public function vendorVirtualServiceMarkups(): HasMany
+    {
+        return $this->hasMany(VendorVirtualServiceMarkup::class);
+    }
+
+    public function vendorSmmServiceMarkups(): HasMany
+    {
+        return $this->hasMany(VendorSmmServiceMarkup::class);
+    }
+
     public function isAdmin(): bool
     {
         return $this->role === UserRole::Admin;
+    }
+
+    public function isVendor(): bool
+    {
+        return $this->role === UserRole::Vendor;
     }
 
     public function isActive(): bool

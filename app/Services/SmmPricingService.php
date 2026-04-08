@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\SmmService;
 use App\Models\SmmServicePrice;
 use App\Models\Setting;
+use App\Models\User;
+use App\Models\VendorSmmServiceMarkup;
 use Illuminate\Support\Facades\Log;
 
 class SmmPricingService
@@ -17,7 +19,7 @@ class SmmPricingService
     /**
      * Calculate final price for SMM service (CrestPanel rate is for 1000 units, already in NGN)
      */
-    public function calculatePrice(SmmService $service, int $quantity = 1): array
+    public function calculatePrice(SmmService $service, int $quantity = 1, ?User $user = null): array
     {
         $quantity = max(1, $quantity);
 
@@ -29,7 +31,7 @@ class SmmPricingService
         $totalCostNgn = $pricePerUnit * $quantity;
 
         // Resolve markup: per-service override first, then global settings.
-        $markup = $this->resolveMarkupForService($service);
+        $markup = $this->resolveMarkupForService($service, $user);
         $markupValue = (float) $markup['value'];
         $markupType = (string) $markup['type'];
 
@@ -43,10 +45,16 @@ class SmmPricingService
             $finalPriceNgn = $totalCostNgn + ($fixedMarkupPerUnit * $quantity);
         }
 
+        if ($user?->isVendor()) {
+            $vendorGlobalMarkup = (float) Setting::get('vendor_global_markup_smm', 0);
+            $vendorGlobalMarkupPerUnit = $vendorGlobalMarkup / 1000;
+            $finalPriceNgn += ($vendorGlobalMarkupPerUnit * $quantity);
+        }
+
         // Calculate profit
         $profit = max(0, $finalPriceNgn - $totalCostNgn);
 
-        $finalPriceRounded = round($finalPriceNgn, 2);
+        $finalPriceRounded = round(max(0, $finalPriceNgn), 2);
         $costPriceRounded = round($totalCostNgn, 2);
         $profitRounded = round($profit, 2);
         $ratePerUnit = round($finalPriceNgn / $quantity, 4);
@@ -71,8 +79,33 @@ class SmmPricingService
     /**
      * Resolve effective markup for a service.
      */
-    public function resolveMarkupForService(SmmService $service): array
+    public function resolveMarkupForService(SmmService $service, ?User $user = null): array
     {
+        if ($user?->isVendor()) {
+            $vendorMarkup = VendorSmmServiceMarkup::where('user_id', $user->id)
+                ->where('smm_service_id', $service->id)
+                ->where('is_active', true)
+                ->first();
+
+            if ($vendorMarkup && $vendorMarkup->markup_value !== null) {
+                $type = strtolower((string) $vendorMarkup->markup_type);
+                return [
+                    'type' => $type === 'percent' ? 'percent' : 'fixed',
+                    'value' => (float) $vendorMarkup->markup_value,
+                    'source' => 'vendor_service',
+                ];
+            }
+
+            if ($user->vendor_smm_markup_value !== null && $user->vendor_smm_markup_type !== null) {
+                $type = strtolower((string) $user->vendor_smm_markup_type);
+                return [
+                    'type' => $type === 'percent' ? 'percent' : 'fixed',
+                    'value' => (float) $user->vendor_smm_markup_value,
+                    'source' => 'vendor_default',
+                ];
+            }
+        }
+
         $servicePrice = SmmServicePrice::where('smm_service_id', $service->id)
             ->where('is_active', true)
             ->first();

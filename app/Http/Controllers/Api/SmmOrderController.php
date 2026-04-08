@@ -71,7 +71,7 @@ class SmmOrderController extends Controller
             }
 
             // Calculate price
-            $priceData = $this->smmPricingService->calculatePrice($service, $validated['quantity']);
+            $priceData = $this->smmPricingService->calculatePrice($service, $validated['quantity'], $user);
             $finalPriceNgn = $priceData['total_price'];
 
             // Check wallet balance

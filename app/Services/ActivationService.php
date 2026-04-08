@@ -74,7 +74,14 @@ class ActivationService
             ? round(($estimatedCostNgn * $globalMarkupValue) / 100, 2)
             : round($globalMarkupValue, 2);
 
-        $finalPrice = $this->pricingService->calculateFinalPrice($providerPrice, MarkupType::Fixed, 0);
+        $finalPrice = $this->pricingService->calculateFinalPrice(
+            $providerPrice,
+            MarkupType::Fixed,
+            0,
+            $user,
+            $service,
+            $country,
+        );
         $profitAmount = round($finalPrice - $estimatedCostNgn, 2);
 
         if ($profitAmount < 0) {

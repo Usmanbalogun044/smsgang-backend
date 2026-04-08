@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\Admin\AdminSmmSettingsController;
 use App\Http\Controllers\Api\Admin\AdminTransactionController;
 use App\Http\Controllers\Api\Admin\AdminTwilioSubscriptionController;
 use App\Http\Controllers\Api\Admin\AdminUserController;
+use App\Http\Controllers\Api\Admin\AdminVendorMarkupController;
 use App\Http\Controllers\Api\Admin\WithdrawalController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\HealthController;
@@ -76,6 +77,7 @@ Route::middleware(['auth:sanctum', 'active', 'track.activity', 'throttle:api'])-
     Route::get('/user', [AuthController::class, 'user']);
     Route::put('/user/profile', [AuthController::class, 'updateProfile']);
     Route::put('/user/password', [AuthController::class, 'updatePassword']);
+    Route::post('/user/complete-onboarding', [AuthController::class, 'completeOnboarding']);
 
     // Activations
     Route::post('/activations/buy', [ActivationController::class, 'buy'])
@@ -194,6 +196,17 @@ Route::middleware(['auth:sanctum', 'active', 'admin', 'throttle:api'])
         Route::get('/smm/settings', [AdminSmmSettingsController::class, 'index']);
         Route::put('/smm/settings', [AdminSmmSettingsController::class, 'update']);
         Route::put('/smm/services/{serviceId}/markup', [AdminSmmSettingsController::class, 'updateServiceMarkup']);
+
+        // Vendor pricing
+        Route::get('/vendor-markups/virtual', [AdminVendorMarkupController::class, 'listVirtual']);
+        Route::post('/vendor-markups/virtual', [AdminVendorMarkupController::class, 'storeVirtual']);
+        Route::put('/vendor-markups/virtual/{markup}', [AdminVendorMarkupController::class, 'updateVirtual']);
+        Route::delete('/vendor-markups/virtual/{markup}', [AdminVendorMarkupController::class, 'destroyVirtual']);
+
+        Route::get('/vendor-markups/smm', [AdminVendorMarkupController::class, 'listSmm']);
+        Route::post('/vendor-markups/smm', [AdminVendorMarkupController::class, 'storeSmm']);
+        Route::put('/vendor-markups/smm/{markup}', [AdminVendorMarkupController::class, 'updateSmm']);
+        Route::delete('/vendor-markups/smm/{markup}', [AdminVendorMarkupController::class, 'destroySmm']);
 
         // SMM Orders
         Route::get('/smm/orders', [AdminSmmOrderController::class, 'index']);
