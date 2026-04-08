@@ -11,7 +11,6 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class PostTelegramBoostingUpdateJob implements ShouldQueue
@@ -23,19 +22,25 @@ class PostTelegramBoostingUpdateJob implements ShouldQueue
 
     public function handle(TelegramNotificationService $telegram, SmmPricingService $pricingService): void
     {
-        $services = $this->bestBoostingServices($pricingService)
+        $trendingPool = $this->bestBoostingServices($pricingService)
             ->sortByDesc(fn (array $item) => $item['orders_count'])
             ->values()
-            ->take(5);
+            ->take(40)
+            ->values();
 
-        $excludeServiceIds = $services->pluck('service_id')->all();
+        $trendingPicks = $trendingPool
+            ->shuffle()
+            ->take(min(4, $trendingPool->count()))
+            ->values();
+
+        $excludeServiceIds = $trendingPicks->pluck('service_id')->all();
 
         $randomServices = $this->randomBoostingServices($pricingService, $excludeServiceIds)
             ->shuffle()
-            ->take(2)
+            ->take(max(0, 7 - $trendingPicks->count()))
             ->values();
 
-        $offers = $services->concat($randomServices)->take(7)->values();
+        $offers = $trendingPicks->concat($randomServices)->shuffle()->take(7)->values();
 
         if ($offers->isEmpty()) {
             Log::channel('activity')->warning('Telegram boosting update skipped: no active boosting offers found');

@@ -74,7 +74,7 @@ class ServiceController extends Controller
      */
     public function countriesForService(Service $service, PricingService $pricingService): JsonResponse
     {
-        $authUser = auth('sanctum')->user();
+        $authUser = request()->user('sanctum') ?? auth('sanctum')->user();
 
         $rows = ServicePrice::query()
             ->with('country:id,name,code,flag,is_active')
@@ -169,7 +169,7 @@ class ServiceController extends Controller
 
     public function operatorsForServiceCountry(Service $service, Country $country, PricingService $pricingService): JsonResponse
     {
-        $authUser = auth('sanctum')->user();
+        $authUser = request()->user('sanctum') ?? auth('sanctum')->user();
 
         $row = ServicePrice::query()
             ->with('country:id,name,code,flag,is_active')

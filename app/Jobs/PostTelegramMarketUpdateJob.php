@@ -24,18 +24,20 @@ class PostTelegramMarketUpdateJob implements ShouldQueue
         $popularSlugs = array_values(array_filter((array) config('popular-services.priority_order', [])));
 
         $popularOffers = $this->bestOffersForSlugs($popularSlugs)
-            ->sortBy(fn (array $item) => array_search($item['service_slug'], $popularSlugs, true))
-            ->values()
-            ->take(5);
+            ->shuffle()
+            ->values();
 
-        $excludeServiceIds = $popularOffers->pluck('service_id')->all();
+        $popularPickCount = min(3, $popularOffers->count());
+        $pickedPopular = $popularOffers->take($popularPickCount)->values();
+
+        $excludeServiceIds = $pickedPopular->pluck('service_id')->all();
 
         $randomOffers = $this->bestOffersExcludingServiceIds($excludeServiceIds)
             ->shuffle()
-            ->take(2)
+            ->take(max(0, 7 - $popularPickCount))
             ->values();
 
-        $offers = $popularOffers->concat($randomOffers)->take(7)->values();
+        $offers = $pickedPopular->concat($randomOffers)->shuffle()->take(7)->values();
 
         if ($offers->isEmpty()) {
             Log::channel('activity')->warning('Telegram market update skipped: no active offers found');
