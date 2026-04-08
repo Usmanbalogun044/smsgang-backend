@@ -9,6 +9,7 @@ class TelegramNotificationService
 {
     private string $botToken;
     private string $chatId;
+    private string $channelChatId;
     private bool $enabled;
     private string $baseUrl = 'https://api.telegram.org/bot';
 
@@ -16,7 +17,17 @@ class TelegramNotificationService
     {
         $this->botToken = config('services.telegram.bot_token', '');
         $this->chatId = config('services.telegram.chat_id', '');
+        $this->channelChatId = config('services.telegram.channel_chat_id', $this->chatId);
         $this->enabled = config('services.telegram.enabled', false);
+    }
+
+    public function sendChannelPost(string $message, ?string $parseMode = 'Markdown'): bool
+    {
+        if (! $this->enabled || ! $this->botToken || ! $this->channelChatId) {
+            return false;
+        }
+
+        return $this->sendMessage($message, $this->channelChatId, $parseMode);
     }
 
     /**
@@ -172,14 +183,20 @@ class TelegramNotificationService
     /**
      * Send message to Telegram
      */
-    private function sendMessage(string $message): bool
+    private function sendMessage(string $message, ?string $targetChatId = null, ?string $parseMode = 'Markdown'): bool
     {
         try {
-            $response = Http::post("{$this->baseUrl}{$this->botToken}/sendMessage", [
-                'chat_id' => $this->chatId,
+            $payload = [
+                'chat_id' => $targetChatId ?: $this->chatId,
                 'text' => $message,
-                'parse_mode' => 'Markdown',
-            ]);
+                'disable_web_page_preview' => true,
+            ];
+
+            if ($parseMode) {
+                $payload['parse_mode'] = $parseMode;
+            }
+
+            $response = Http::post("{$this->baseUrl}{$this->botToken}/sendMessage", $payload);
 
             if ($response->successful()) {
                 return true;

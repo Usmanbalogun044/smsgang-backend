@@ -3,6 +3,8 @@
 use App\Jobs\CheckAllActiveSmsJob;
 use App\Jobs\CheckSmmOrderStatusJob;
 use App\Jobs\ExpireActivationsJob;
+use App\Jobs\PostTelegramBoostingUpdateJob;
+use App\Jobs\PostTelegramMarketUpdateJob;
 use App\Jobs\ProcessTwilioRenewalsJob;
 use App\Jobs\SyncAllPricingJob;
 use App\Jobs\SyncSmmServicesJob;
@@ -74,6 +76,24 @@ Schedule::job(new ProcessTwilioRenewalsJob())
     ->withoutOverlapping(15)
     ->onFailure(function () {
         Log::channel('activity')->error('❌ Twilio renewals processing failed');
+    });
+
+// Post market updates to Telegram channel every 20 minutes
+Schedule::job(new PostTelegramMarketUpdateJob())
+    ->name('post-telegram-market-update')
+    ->cron('*/20 * * * *')
+    ->withoutOverlapping(10)
+    ->onFailure(function () {
+        Log::channel('activity')->error('❌ Telegram market update posting failed');
+    });
+
+// Post boosting updates to Telegram channel every 20 minutes, offset from virtual updates
+Schedule::job(new PostTelegramBoostingUpdateJob())
+    ->name('post-telegram-boosting-update')
+    ->cron('10,30,50 * * * *')
+    ->withoutOverlapping(10)
+    ->onFailure(function () {
+        Log::channel('activity')->error('❌ Telegram boosting update posting failed');
     });
 
 // Clean up failed jobs every day at 2 AM
