@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Transaction;
+use App\Models\User;
 use App\Services\WalletService;
 use App\Services\LendoverifyService;
 use App\Services\TelegramNotificationService;
@@ -34,12 +35,81 @@ class WalletController extends Controller
         return $this->transactionOperationTypeColumnExists;
     }
 
+    private function reconcilePendingFunding(User $user): void
+    {
+        $query = Transaction::query()
+            ->where('user_id', $user->id)
+            ->where('type', 'credit')
+            ->where('status', 'pending')
+            ->where(function ($builder) {
+                $builder->where('description', 'like', 'Wallet funding%')
+                    ->orWhere('reference', 'like', 'WALLET_%');
+            })
+            ->orderBy('created_at', 'asc')
+            ->limit(5);
+
+        if ($this->hasTransactionOperationTypeColumn()) {
+            $query->where('operation_type', 'wallet_fund');
+        }
+
+        /** @var \Illuminate\Database\Eloquent\Collection<int, Transaction> $pendingTransactions */
+        $pendingTransactions = $query->get();
+
+        foreach ($pendingTransactions as $transaction) {
+            try {
+                $verification = $this->lendoverify->verifyReference($transaction->reference);
+                $verificationData = $verification['data'] ?? $verification;
+                $paymentStatus = strtolower(trim((string) (
+                    $verificationData['paymentStatus']
+                    ?? $verificationData['status']
+                    ?? ''
+                )));
+
+                if (in_array($paymentStatus, ['paid', 'success', 'successful', 'completed'], true)) {
+                    $amount = (float) ($verificationData['amountPaid'] ?? $verificationData['amount'] ?? $transaction->amount);
+                    if ($amount > 10000) {
+                        $amount = $amount / 100;
+                    }
+
+                    $userModel = $transaction->user;
+                    if ($userModel) {
+                        $this->walletService->addFunds($userModel, $amount, $transaction->reference);
+                    }
+
+                    $transaction->update([
+                        'status' => 'paid',
+                        'amount' => $amount,
+                        'gateway_response' => $verificationData,
+                        'gateway_reference' => $verificationData['reference'] ?? $transaction->reference,
+                        'verified_at' => $transaction->verified_at ?? now(),
+                    ]);
+                    continue;
+                }
+
+                if (in_array($paymentStatus, ['failed', 'cancelled', 'canceled', 'declined', 'abandoned'], true)) {
+                    $transaction->update([
+                        'status' => 'failed',
+                        'gateway_response' => $verificationData,
+                        'gateway_reference' => $verificationData['reference'] ?? $transaction->reference,
+                    ]);
+                }
+            } catch (Throwable $e) {
+                Log::warning('Wallet funding reconciliation skipped', [
+                    'transaction_id' => $transaction->id,
+                    'reference' => $transaction->reference,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
     /**
      * Get user's wallet balance
      */
     public function getBalance(Request $request): JsonResponse
     {
         $user = $request->user();
+        $this->reconcilePendingFunding($user);
         $balance = $this->walletService->getBalance($user);
 
         return response()->json([
@@ -217,6 +287,8 @@ class WalletController extends Controller
     {
         try {
             $user = $request->user();
+
+            $this->reconcilePendingFunding($user);
             
             $type = $request->query('type'); // debit or credit
             $period = $request->query('period'); // today, week, month, all
