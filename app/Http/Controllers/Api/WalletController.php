@@ -125,7 +125,7 @@ class WalletController extends Controller
     {
         try {
             $validated = $request->validate([
-                'amount' => ['required', 'numeric', 'min:500'],
+                'amount' => ['required', 'numeric', 'min:1000'],
             ]);
 
             $amount = (float) $validated['amount'];
