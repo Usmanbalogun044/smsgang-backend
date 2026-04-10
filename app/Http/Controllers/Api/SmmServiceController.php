@@ -15,6 +15,68 @@ class SmmServiceController extends Controller
         private SmmPricingService $smmPricingService,
     ) {}
 
+    private function buildServiceIntelligence(SmmService $service): array
+    {
+        $name = strtolower((string) $service->name);
+        $category = strtolower((string) $service->category);
+        $refill = (bool) $service->refill;
+        $cancel = (bool) $service->cancel;
+
+        $isPremium = str_contains($name, 'premium')
+            || str_contains($name, 'high retention')
+            || str_contains($name, 'hq')
+            || str_contains($name, 'real');
+
+        $isCheap = str_contains($name, 'cheap')
+            || str_contains($name, 'budget')
+            || str_contains($name, 'economy')
+            || str_contains($name, 'low cost');
+
+        if ($isPremium) {
+            $tier = 'premium';
+            $tierLabel = 'Premium (High Retention)';
+            $dropRisk = '0-10';
+            $startTime = '0-30 mins';
+            $speedPerDay = '2K-8K/day';
+            $recommendationTag = 'Best Retention';
+        } elseif ($isCheap) {
+            $tier = 'cheap';
+            $tierLabel = 'Cheap (May Drop)';
+            $dropRisk = '30-60';
+            $startTime = '0-5 mins';
+            $speedPerDay = '10K-80K/day';
+            $recommendationTag = 'Trending';
+        } else {
+            $tier = 'standard';
+            $tierLabel = 'Standard (Refill)';
+            $dropRisk = '10-25';
+            $startTime = '5-60 mins';
+            $speedPerDay = '5K-30K/day';
+            $recommendationTag = 'Recommended';
+        }
+
+        $marketLabel = $service->name;
+        if (str_contains($category, 'instagram likes')) {
+            $marketLabel = $tier === 'cheap'
+                ? 'Instagram Likes - Fast Boost (Budget)'
+                : ($tier === 'premium'
+                    ? 'Instagram Likes - Premium Real Mix'
+                    : 'Instagram Likes - Stable Growth (Refill)');
+        }
+
+        return [
+            'quality_tier' => $tier,
+            'quality_tier_label' => $tierLabel,
+            'drop_risk_percent_range' => $dropRisk,
+            'estimated_start_time' => $startTime,
+            'estimated_speed_per_day' => $speedPerDay,
+            'auto_refill_protected' => $refill,
+            'supports_cancel' => $cancel,
+            'recommendation_tag' => $recommendationTag,
+            'market_label' => $marketLabel,
+        ];
+    }
+
     /**
      * Get all active SMM services
      */
@@ -51,6 +113,7 @@ class SmmServiceController extends Controller
             return response()->json([
                 'data' => $services->getCollection()->map(function ($service) use ($authUser) {
                     $priceData = $this->smmPricingService->calculatePrice($service, 1, $authUser);
+                    $intelligence = $this->buildServiceIntelligence($service);
 
                     return [
                         'id' => $service->id,
@@ -67,6 +130,7 @@ class SmmServiceController extends Controller
                         'max' => $service->max,
                         'refill' => $service->refill,
                         'cancel' => $service->cancel,
+                        ...$intelligence,
                     ];
                 }),
                 'categories' => $categories,
@@ -98,6 +162,7 @@ class SmmServiceController extends Controller
             }
 
             $priceData = $this->smmPricingService->calculatePrice($service, 1, request()->user());
+            $intelligence = $this->buildServiceIntelligence($service);
 
             return response()->json([
                 'id' => $service->id,
@@ -115,6 +180,7 @@ class SmmServiceController extends Controller
                 'max' => $service->max,
                 'refill' => $service->refill,
                 'cancel' => $service->cancel,
+                ...$intelligence,
             ]);
         } catch (\Exception $e) {
             return response()->json([

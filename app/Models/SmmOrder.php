@@ -29,6 +29,19 @@ class SmmOrder extends Model
         'markup_value_used',
         'provider_payload',
         'status',
+        'tracking_auto_refill_enabled',
+        'tracking_initial_count',
+        'tracking_current_count',
+        'tracking_last_completed_quantity',
+        'tracking_drop_detected_quantity',
+        'tracking_refilled_quantity',
+        'tracking_outstanding_drop_quantity',
+        'tracking_last_drop_at',
+        'tracking_last_refill_at',
+        'tracking_check_6h_at',
+        'tracking_check_24h_at',
+        'tracking_check_72h_at',
+        'tracking_last_status_checked_at',
     ];
 
     protected function casts(): array
@@ -41,6 +54,19 @@ class SmmOrder extends Model
             'markup_value_used' => 'decimal:4',
             'provider_payload' => 'array',
             'status' => SmmOrderStatus::class,
+            'tracking_auto_refill_enabled' => 'boolean',
+            'tracking_initial_count' => 'integer',
+            'tracking_current_count' => 'integer',
+            'tracking_last_completed_quantity' => 'integer',
+            'tracking_drop_detected_quantity' => 'integer',
+            'tracking_refilled_quantity' => 'integer',
+            'tracking_outstanding_drop_quantity' => 'integer',
+            'tracking_last_drop_at' => 'datetime',
+            'tracking_last_refill_at' => 'datetime',
+            'tracking_check_6h_at' => 'datetime',
+            'tracking_check_24h_at' => 'datetime',
+            'tracking_check_72h_at' => 'datetime',
+            'tracking_last_status_checked_at' => 'datetime',
         ];
     }
 

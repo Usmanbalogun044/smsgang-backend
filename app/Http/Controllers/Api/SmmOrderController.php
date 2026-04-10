@@ -110,6 +110,7 @@ class SmmOrderController extends Controller
                 'markup_value_used' => $markupValueUsed,
                 'provider_payload' => null,  // Will be updated after CrestPanel response
                 'status' => SmmOrderStatus::PendingProviderConfirmation->value,
+                'tracking_auto_refill_enabled' => (bool) $service->refill,
             ]);
 
             // STEP 2: Deduct from wallet (lock funds locally)
@@ -336,9 +337,23 @@ class SmmOrderController extends Controller
             ? min(100, round(($completedQuantity / (int) $order->quantity) * 100, 2))
             : null;
 
+        $currentCount = null;
+        if (is_int($startCount) && is_int($completedQuantity)) {
+            $currentCount = $startCount + $completedQuantity;
+        }
+
+        if ($currentCount === null && $order->tracking_current_count !== null) {
+            $currentCount = (int) $order->tracking_current_count;
+        }
+
+        if ($startCount === null && $order->tracking_initial_count !== null) {
+            $startCount = (int) $order->tracking_initial_count;
+        }
+
         return [
             'remains' => $remains,
             'start_count' => $startCount,
+            'current_count' => $currentCount,
             'completed_quantity' => $completedQuantity,
             'progress_percent' => $progressPercent,
         ];
@@ -365,8 +380,18 @@ class SmmOrderController extends Controller
             'status' => $statusPayload['status'] ?? $order->status->value,
             'remains' => $progress['remains'],
             'start_count' => $progress['start_count'],
+            'current_count' => $progress['current_count'],
             'completed_quantity' => $progress['completed_quantity'],
             'progress_percent' => $progress['progress_percent'],
+            'drop_detected_quantity' => (int) ($order->tracking_drop_detected_quantity ?? 0),
+            'refilled_quantity' => (int) ($order->tracking_refilled_quantity ?? 0),
+            'outstanding_drop_quantity' => (int) ($order->tracking_outstanding_drop_quantity ?? 0),
+            'auto_refill_protected' => (bool) ($order->tracking_auto_refill_enabled ?? false),
+            'drop_checks' => [
+                'check_6h_at' => $order->tracking_check_6h_at?->toIso8601String(),
+                'check_24h_at' => $order->tracking_check_24h_at?->toIso8601String(),
+                'check_72h_at' => $order->tracking_check_72h_at?->toIso8601String(),
+            ],
             'created_at' => $order->created_at->toIso8601String(),
             'updated_at' => $order->updated_at->toIso8601String(),
         ];
