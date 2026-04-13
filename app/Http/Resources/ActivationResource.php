@@ -14,6 +14,7 @@ class ActivationResource extends JsonResource
         return [
             'id' => $this->id,
             'order_id' => $this->order_id,
+            'selected_operator' => $this->order?->selected_operator,
             'phone_number' => $this->phone_number,
             'sms_code' => $this->sms_code,
             'status' => $this->status->value,

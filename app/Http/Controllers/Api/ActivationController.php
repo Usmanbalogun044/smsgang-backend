@@ -185,7 +185,7 @@ class ActivationController extends Controller
     {
         $this->authorize('view', $activation);
 
-        return new ActivationResource($activation->load(['service', 'country']));
+        return new ActivationResource($activation->load(['service', 'country', 'order']));
     }
 
     public function checkSms(Activation $activation): JsonResponse
@@ -202,7 +202,7 @@ class ActivationController extends Controller
         $smsCode = $this->activationService->checkForSms($activation);
 
         return response()->json([
-            'activation' => new ActivationResource($activation->fresh()->load(['service', 'country'])),
+            'activation' => new ActivationResource($activation->fresh()->load(['service', 'country', 'order'])),
             'sms_code' => $smsCode,
         ]);
     }
@@ -220,7 +220,7 @@ class ActivationController extends Controller
 
         return response()->json([
             'message' => 'Activation cancelled.',
-            'activation' => new ActivationResource($activation->fresh()->load(['service', 'country'])),
+            'activation' => new ActivationResource($activation->fresh()->load(['service', 'country', 'order'])),
         ]);
     }
 }
