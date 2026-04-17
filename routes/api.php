@@ -138,6 +138,11 @@ Route::middleware(['auth:sanctum', 'active', 'track.activity', 'throttle:api'])-
     });
 });
 
+// Developer routes (API key management + API endpoints)
+Route::prefix('developer')->group(function () {
+    require __DIR__.'/developer.php';
+});
+
 // Admin routes
 Route::middleware(['auth:sanctum', 'active', 'admin', 'throttle:api'])
     ->prefix('admin')

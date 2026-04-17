@@ -7,10 +7,18 @@ info:
     SMS verification on 300+ global platforms. All monetary values are in **Nigerian Naira (₦)**.
 
     ## Authentication
-    The API uses **Laravel Sanctum** bearer tokens. After registering or logging in,
-    include the token in every protected request via the `Authorization` header:
+    The API supports two authentication modes:
+    - **Laravel Sanctum** bearer tokens for dashboard users
+    - **Developer API keys** for external integrations and partner apps
+
+    Use the dashboard token via the `Authorization` header:
     ```
     Authorization: Bearer {token}
+    ```
+
+    Use the developer key via the `X-API-Key` header:
+    ```
+    X-API-Key: sgk_your_key_here
     ```
 
     ## Rate Limits
@@ -36,6 +44,8 @@ servers:
 tags:
   - name: Auth
     description: Register, login, and manage sessions
+  - name: Developer
+    description: API key management and partner integrations
   - name: Catalog
     description: Browse available services and countries (public)
   - name: Activations
@@ -166,6 +176,181 @@ paths:
                 $ref: '#/components/schemas/User'
         '401':
           $ref: '#/components/responses/Unauthenticated'
+
+  # ── DEVELOPER ───────────────────────────────
+  /developer/api-keys:
+    get:
+      tags: [Developer]
+      summary: List developer API keys for the authenticated account
+      operationId: developer.apiKeys.index
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of API keys for the current user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        key_prefix:
+                          type: string
+                        abilities:
+                          type: array
+                          items:
+                            type: string
+                        last_used_at:
+                          type: string
+                          nullable: true
+                        revoked_at:
+                          type: string
+                          nullable: true
+                        created_at:
+                          type: string
+
+    post:
+      tags: [Developer]
+      summary: Create a new developer API key
+      operationId: developer.apiKeys.store
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+            example:
+              name: Production integration
+      responses:
+        '201':
+          description: API key created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  api_key:
+                    type: object
+                  plain_key:
+                    type: string
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /developer/api-keys/{developerApiKey}:
+    delete:
+      tags: [Developer]
+      summary: Revoke a developer API key
+      operationId: developer.apiKeys.destroy
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: developerApiKey
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: API key revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /developer/v1/services:
+    get:
+      tags: [Developer]
+      summary: List all active services using an API key
+      operationId: developer.services.index
+      security:
+        - developerApiKey: []
+      responses:
+        '200':
+          description: Service list for the API key owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceCollection'
+
+  /developer/v1/countries:
+    get:
+      tags: [Developer]
+      summary: List all active countries using an API key
+      operationId: developer.countries.index
+      security:
+        - developerApiKey: []
+      responses:
+        '200':
+          description: Country list for the API key owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CountryCollection'
+
+  /developer/v1/activations/buy:
+    post:
+      tags: [Developer]
+      summary: Purchase a new activation using an API key
+      operationId: developer.activations.buy
+      security:
+        - developerApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BuyActivationRequest'
+            example:
+              service_id: 12
+              country_id: 5
+      responses:
+        '201':
+          description: Activation purchase started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    $ref: '#/components/schemas/Order'
+                  checkout_url:
+                    type: string
+                    format: uri
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /developer/v1/orders:
+    get:
+      tags: [Developer]
+      summary: List developer orders using an API key
+      operationId: developer.orders.index
+      security:
+        - developerApiKey: []
+      responses:
+        '200':
+          description: Orders for the API key owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPage'
 
   # ── CATALOG ──────────────────────────────────
   /services:
@@ -1092,6 +1277,11 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: Laravel Sanctum personal access token
+    developerApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Developer key for external API integrations
 
   # ── PARAMETERS ──────────────────────────────
   parameters:

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\UserRole;
 use App\Enums\UserStatus;
+use App\Models\DeveloperApiKey;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -95,6 +96,11 @@ class User extends Authenticatable
     public function twilioMessages(): HasMany
     {
         return $this->hasMany(TwilioMessage::class);
+    }
+
+    public function developerApiKeys(): HasMany
+    {
+        return $this->hasMany(DeveloperApiKey::class);
     }
 
     public function vendorVirtualServiceMarkups(): HasMany

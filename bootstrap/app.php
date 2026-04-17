@@ -1,9 +1,10 @@
 <?php
 
+use App\Http\Middleware\AuthenticateDeveloperApiKey;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
-use Illuminate\Console\Scheduling\Schedule;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -17,6 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin' => \App\Http\Middleware\EnsureIsAdmin::class,
             'active' => \App\Http\Middleware\EnsureIsActive::class,
             'check.bot' => \App\Http\Middleware\CheckBotMiddleware::class,
+            'developer.key' => AuthenticateDeveloperApiKey::class,
             'track.activity' => \App\Http\Middleware\TrackUserActivityMiddleware::class,
         ]);
     })
