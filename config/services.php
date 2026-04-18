@@ -56,6 +56,8 @@ return [
         'account_sid' => env('TWILIO_ACCOUNT_SID'),
         'auth_token' => env('TWILIO_AUTH_TOKEN'),
         'messaging_service_sid' => env('TWILIO_MESSAGING_SERVICE_SID'),
+        'whatsapp_messaging_service_sid' => env('TWILIO_WHATSAPP_MESSAGING_SERVICE_SID'),
+        'whatsapp_production_from' => env('TWILIO_WHATSAPP_PRODUCTION_FROM'),
         'default_country' => env('TWILIO_DEFAULT_COUNTRY', 'US'),
         'default_monthly_price_usd' => (float) env('TWILIO_DEFAULT_MONTHLY_PRICE_USD', 1.20),
         'inventory_cache_ttl' => (int) env('TWILIO_INVENTORY_CACHE_TTL', 90),

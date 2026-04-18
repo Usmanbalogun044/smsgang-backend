@@ -118,9 +118,9 @@ class WalletService
     /**
      * Deduct funds from wallet (for purchases)
      */
-    public function deductFunds(User $user, float $amount, string $reference, string $description): ?Transaction
+    public function deductFunds(User $user, float $amount, string $reference, string $description, string $operationType = 'wallet_debit'): ?Transaction
     {
-        return DB::transaction(function () use ($user, $amount, $reference, $description) {
+        return DB::transaction(function () use ($user, $amount, $reference, $description, $operationType) {
             $existing = Transaction::where('reference', $reference)->first();
             if ($existing) {
                 return $existing;
@@ -142,7 +142,7 @@ class WalletService
             ];
 
             if ($this->hasOperationTypeColumn()) {
-                $payload['operation_type'] = 'wallet_debit';
+                $payload['operation_type'] = $operationType;
             }
 
             try {
@@ -164,9 +164,9 @@ class WalletService
     /**
      * Refund funds to user's wallet
      */
-    public function refundFunds(User $user, float $amount, string $reference, string $description): Transaction
+    public function refundFunds(User $user, float $amount, string $reference, string $description, string $operationType = 'wallet_refund'): Transaction
     {
-        return DB::transaction(function () use ($user, $amount, $reference, $description) {
+        return DB::transaction(function () use ($user, $amount, $reference, $description, $operationType) {
             $existing = Transaction::where('reference', $reference)->first();
             if ($existing) {
                 return $existing;
@@ -184,7 +184,7 @@ class WalletService
             ];
 
             if ($this->hasOperationTypeColumn()) {
-                $payload['operation_type'] = 'wallet_refund';
+                $payload['operation_type'] = $operationType;
             }
 
             try {
@@ -214,7 +214,9 @@ class WalletService
             $query->where(function ($q) {
                 $q->where('operation_type', 'wallet_fund')
                   ->orWhere('operation_type', 'wallet_debit')
-                  ->orWhere('operation_type', 'wallet_refund');
+                  ->orWhere('operation_type', 'wallet_refund')
+                  ->orWhere('operation_type', 'whatsapp_send')
+                  ->orWhere('operation_type', 'whatsapp_refund');
             });
         } else {
             // Legacy schema fallback: wallet ledger is represented as credit/debit transaction types.

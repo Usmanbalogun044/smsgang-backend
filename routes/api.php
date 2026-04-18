@@ -25,7 +25,10 @@ use App\Http\Controllers\Api\SmmServiceController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\TwilioSubscriptionController;
 use App\Http\Controllers\Api\TwilioWebhookController;
+use App\Http\Controllers\Api\WhatsappNotificationController;
+use App\Http\Controllers\Api\WhatsappWebhookController;
 use App\Http\Controllers\Api\WalletController;
+use App\Http\Controllers\Api\Admin\AdminWhatsappController;
 use Illuminate\Support\Facades\Route;
 
 // Health check endpoint (no auth, no throttling)
@@ -70,6 +73,11 @@ Route::post('/webhooks/twilio/sms', [TwilioWebhookController::class, 'handleSms'
     ->middleware('throttle:webhook');
 Route::post('/webhooks/twilio/status', [TwilioWebhookController::class, 'handleStatus'])
     ->middleware('throttle:webhook');
+
+Route::post('/webhooks/whatsapp/inbound', [WhatsappWebhookController::class, 'handleInbound'])
+    ->middleware(['throttle:webhook', 'twilio.signature']);
+Route::post('/webhooks/whatsapp/status', [WhatsappWebhookController::class, 'handleStatus'])
+    ->middleware(['throttle:webhook', 'twilio.signature']);
 
 // Authenticated user routes
 Route::middleware(['auth:sanctum', 'active', 'track.activity', 'throttle:api'])->group(function () {
@@ -124,6 +132,13 @@ Route::middleware(['auth:sanctum', 'active', 'track.activity', 'throttle:api'])-
         Route::patch('/subscriptions/{subscription}/auto-renew', [TwilioSubscriptionController::class, 'updateAutoRenew']);
         Route::get('/subscriptions/{subscription}/messages', [TwilioSubscriptionController::class, 'messages']);
         Route::post('/subscriptions/{subscription}/messages', [TwilioSubscriptionController::class, 'sendMessage']);
+    });
+
+    // WhatsApp notifications
+    Route::prefix('whatsapp')->group(function () {
+        Route::get('/templates', [WhatsappNotificationController::class, 'templates']);
+        Route::get('/messages', [WhatsappNotificationController::class, 'index']);
+        Route::post('/messages', [WhatsappNotificationController::class, 'send'])->middleware('throttle:whatsapp-send');
     });
 
     // Backward-compatible user aliases
@@ -228,4 +243,14 @@ Route::middleware(['auth:sanctum', 'active', 'admin', 'throttle:api'])
         Route::get('/twilio/subscriptions', [AdminTwilioSubscriptionController::class, 'index']);
         Route::get('/twilio/subscriptions/{subscription}', [AdminTwilioSubscriptionController::class, 'show']);
         Route::get('/twilio/subscriptions/{subscription}/messages', [AdminTwilioSubscriptionController::class, 'messages']);
+
+        // WhatsApp notifications
+        Route::get('/whatsapp/stats', [AdminWhatsappController::class, 'stats']);
+        Route::get('/whatsapp/templates', [AdminWhatsappController::class, 'templates']);
+        Route::post('/whatsapp/templates', [AdminWhatsappController::class, 'storeTemplate']);
+        Route::put('/whatsapp/templates/{template}', [AdminWhatsappController::class, 'updateTemplate']);
+        Route::post('/whatsapp/templates/sync', [AdminWhatsappController::class, 'syncTemplates']);
+        Route::get('/whatsapp/messages', [AdminWhatsappController::class, 'messages']);
+        Route::get('/whatsapp/settings', [AdminWhatsappController::class, 'settings']);
+        Route::put('/whatsapp/settings', [AdminWhatsappController::class, 'updateSettings']);
     });

@@ -20,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'check.bot' => \App\Http\Middleware\CheckBotMiddleware::class,
             'developer.key' => AuthenticateDeveloperApiKey::class,
             'track.activity' => \App\Http\Middleware\TrackUserActivityMiddleware::class,
+            'twilio.signature' => \App\Http\Middleware\ValidateTwilioWebhookSignature::class,
         ]);
     })
     ->withSchedule(function (Schedule $schedule) {

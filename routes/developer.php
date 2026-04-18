@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\SmmOrderController;
 use App\Http\Controllers\Api\SmmServiceController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\TwilioSubscriptionController;
+use App\Http\Controllers\Api\WhatsappNotificationController;
 use App\Http\Controllers\Api\WalletController;
 use Illuminate\Support\Facades\Route;
 
@@ -65,6 +66,13 @@ Route::prefix('v1')
             Route::patch('/subscriptions/{subscription}/auto-renew', [TwilioSubscriptionController::class, 'updateAutoRenew']);
             Route::get('/subscriptions/{subscription}/messages', [TwilioSubscriptionController::class, 'messages']);
             Route::post('/subscriptions/{subscription}/messages', [TwilioSubscriptionController::class, 'sendMessage']);
+        });
+
+        // ========== WhatsApp Notifications ==========
+        Route::prefix('notifications')->group(function () {
+            Route::get('/templates', [WhatsappNotificationController::class, 'templates']);
+            Route::get('/messages', [WhatsappNotificationController::class, 'index']);
+            Route::post('/send', [WhatsappNotificationController::class, 'send']);
         });
 
         // ========== Wallet Management ==========

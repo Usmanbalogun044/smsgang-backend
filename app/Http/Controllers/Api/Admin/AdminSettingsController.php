@@ -21,6 +21,8 @@ class AdminSettingsController extends Controller
             'twilio_default_monthly_price_usd' => (float) Setting::get('twilio_default_monthly_price_usd', 1.2),
             'vendor_global_markup_virtual' => (float) Setting::get('vendor_global_markup_virtual', 0),
             'vendor_global_markup_smm' => (float) Setting::get('vendor_global_markup_smm', 0),
+            'whatsapp_unit_price_ngn' => (float) Setting::get('whatsapp_unit_price_ngn', 20),
+            'whatsapp_production_from' => (string) Setting::get('whatsapp_production_from', ''),
         ]);
     }
 
@@ -35,6 +37,8 @@ class AdminSettingsController extends Controller
             'twilio_default_monthly_price_usd' => 'sometimes|numeric|min:0.01',
             'vendor_global_markup_virtual' => 'sometimes|numeric|min:0',
             'vendor_global_markup_smm' => 'sometimes|numeric|min:0',
+            'whatsapp_unit_price_ngn' => 'sometimes|numeric|min:0.01',
+            'whatsapp_production_from' => 'sometimes|nullable|string|max:40',
         ]);
 
         if (array_key_exists('global_markup', $validated)) {
@@ -69,6 +73,16 @@ class AdminSettingsController extends Controller
             Setting::set('vendor_global_markup_smm', $validated['vendor_global_markup_smm']);
         }
 
+        if (array_key_exists('whatsapp_unit_price_ngn', $validated)) {
+            Setting::set('whatsapp_unit_price_ngn', $validated['whatsapp_unit_price_ngn']);
+        }
+
+        if (array_key_exists('whatsapp_production_from', $validated)) {
+            Setting::set('whatsapp_production_from', $validated['whatsapp_production_from'] ?? '');
+        }
+
+        Setting::set('whatsapp_mode', 'production');
+
         Log::channel('activity')->info('Admin updated global settings', $validated);
 
         return response()->json([
@@ -81,6 +95,8 @@ class AdminSettingsController extends Controller
             'twilio_default_monthly_price_usd' => (float) Setting::get('twilio_default_monthly_price_usd', 1.2),
             'vendor_global_markup_virtual' => (float) Setting::get('vendor_global_markup_virtual', 0),
             'vendor_global_markup_smm' => (float) Setting::get('vendor_global_markup_smm', 0),
+            'whatsapp_unit_price_ngn' => (float) Setting::get('whatsapp_unit_price_ngn', 20),
+            'whatsapp_production_from' => (string) Setting::get('whatsapp_production_from', ''),
         ]);
     }
 }
