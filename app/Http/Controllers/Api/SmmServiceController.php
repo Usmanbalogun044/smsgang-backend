@@ -11,9 +11,6 @@ use Illuminate\Http\Request;
 
 class SmmServiceController extends Controller
 {
-    public function __construct(
-        private SmmPricingService $smmPricingService,
-    ) {}
 
     private function buildServiceIntelligence(SmmService $service): array
     {

@@ -12,9 +12,6 @@ use Illuminate\Http\Request;
 
 class AdminWhatsappController extends Controller
 {
-    public function __construct(
-        private TwilioWhatsappTemplateService $templateService,
-    ) {}
 
     public function stats(): JsonResponse
     {

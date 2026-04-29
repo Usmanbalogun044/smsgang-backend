@@ -17,10 +17,6 @@ use Throwable;
 
 class WhatsappNotificationController extends Controller
 {
-    public function __construct(
-        private TwilioWhatsappService $twilioWhatsappService,
-        private WalletService $walletService,
-    ) {}
 
     public function templates(): JsonResponse
     {

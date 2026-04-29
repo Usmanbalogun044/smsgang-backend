@@ -16,10 +16,6 @@ use Illuminate\Support\Facades\Log;
 
 class AdminPricingController extends Controller
 {
-    public function __construct(
-        private PricingService $pricingService,
-    ) {}
-
     public function index(Request $request): AnonymousResourceCollection
     {
         $perPage = max(1, min((int) $request->integer('per_page', 100), 500));
@@ -62,7 +58,7 @@ class AdminPricingController extends Controller
             'markup_type' => $request->markup_type,
             'markup_value' => $request->markup_value,
             'is_active' => $request->boolean('is_active', $servicePrice->is_active),
-            'final_price' => $this->pricingService->calculateFinalPrice(
+            'final_price' => app(PricingService::class)->calculateFinalPrice(
                 (float) $servicePrice->provider_price,
                 \App\Enums\MarkupType::from($request->markup_type),
                 (float) $request->markup_value,

@@ -21,11 +21,6 @@ class ActivationService
 {
     private ?bool $activationProviderOperatorColumnExists = null;
 
-    public function __construct(
-        private ProviderInterface $provider,
-        private PricingService $pricingService,
-    ) {}
-
     private function hasActivationProviderOperatorColumn(): bool
     {
         if ($this->activationProviderOperatorColumnExists === null) {
@@ -74,7 +69,7 @@ class ActivationService
             ? round(($estimatedCostNgn * $globalMarkupValue) / 100, 2)
             : round($globalMarkupValue, 2);
 
-        $finalPrice = $this->pricingService->calculateFinalPrice(
+        $finalPrice = app(PricingService::class)->calculateFinalPrice(
             $providerPrice,
             MarkupType::Fixed,
             0,
@@ -125,7 +120,7 @@ class ActivationService
 
             if (! empty($selectedOperator)) {
                 try {
-                    $attempt = $this->provider->buyNumber(
+                    $attempt = app(ProviderInterface::class)->buyNumber(
                         product: $order->service->provider_service_code,
                         country: $countryCode,
                         operator: $selectedOperator,
@@ -134,7 +129,7 @@ class ActivationService
                     $reportedProviderCost = $attempt['cost'] ?? $attempt['price'] ?? null;
                     if ($reportedProviderCost !== null && $quotedProviderCost > 0 && (float) $reportedProviderCost > $quotedProviderCost) {
                         try {
-                            $this->provider->cancelActivation((string) $attempt['id']);
+                            app(ProviderInterface::class)->cancelActivation((string) $attempt['id']);
                         } catch (\Throwable) {
                             // Ignore cancel errors; guard still blocks unsafe activation completion.
                         }
@@ -216,7 +211,7 @@ class ActivationService
     public function checkForSms(Activation $activation): ?string
     {
         try {
-            $result = $this->provider->checkSms($activation->provider_activation_id);
+            $result = app(ProviderInterface::class)->checkSms($activation->provider_activation_id);
 
             if ($result && ! empty($result['codes'])) {
                 $smsCode = implode(', ', $result['codes']);
@@ -246,14 +241,14 @@ class ActivationService
 
     public function completeActivation(Activation $activation): void
     {
-        $this->provider->finishActivation($activation->provider_activation_id);
+        app(ProviderInterface::class)->finishActivation($activation->provider_activation_id);
 
         $activation->update(['status' => ActivationStatus::Completed]);
     }
 
     public function cancelActivation(Activation $activation): void
     {
-        $this->provider->cancelActivation($activation->provider_activation_id);
+        app(ProviderInterface::class)->cancelActivation($activation->provider_activation_id);
 
         $activation->update(['status' => ActivationStatus::Cancelled]);
     }

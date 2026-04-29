@@ -20,12 +20,6 @@ class WalletController extends Controller
 {
     private ?bool $transactionOperationTypeColumnExists = null;
 
-    public function __construct(
-        private WalletService $walletService,
-        private LendoverifyService $lendoverify,
-        private TelegramNotificationService $telegramService,
-    ) {}
-
     private function hasTransactionOperationTypeColumn(): bool
     {
         if ($this->transactionOperationTypeColumnExists === null) {
@@ -57,7 +51,7 @@ class WalletController extends Controller
 
         foreach ($pendingTransactions as $transaction) {
             try {
-                $verification = $this->lendoverify->verifyReference($transaction->reference);
+                $verification = app(LendoverifyService::class)->verifyReference($transaction->reference);
                 $verificationData = $verification['data'] ?? $verification;
                 $paymentStatus = strtolower(trim((string) (
                     $verificationData['paymentStatus']
@@ -73,7 +67,7 @@ class WalletController extends Controller
 
                     $userModel = $transaction->user;
                     if ($userModel) {
-                        $this->walletService->addFunds($userModel, $amount, $transaction->reference);
+                        app(WalletService::class)->addFunds($userModel, $amount, $transaction->reference);
                     }
 
                     $transaction->update([
@@ -110,7 +104,7 @@ class WalletController extends Controller
     {
         $user = $request->user();
         $this->reconcilePendingFunding($user);
-        $balance = $this->walletService->getBalance($user);
+        $balance = app(WalletService::class)->getBalance($user);
 
         return response()->json([
             'balance' => $balance,
@@ -166,7 +160,7 @@ class WalletController extends Controller
                 // STEP 2: Initialize payment with Lendoverify
                 $redirectUrl = rtrim((string) config('app.verify_payment_url', config('app.frontend_url', config('app.url')) . '/verify-payment'), '/');
 
-                $result = $this->lendoverify->initializeTransaction([
+                $result = app(LendoverifyService::class)->initializeTransaction([
                     'amount' => (int) round($amount * 100),
                     'customerEmail' => $user->email,
                     'customerName' => $user->name,
@@ -224,7 +218,7 @@ class WalletController extends Controller
             $user = $request->user();
 
             // Verify payment with Lendoverify
-            $result = $this->lendoverify->verifyReference($reference);
+            $result = app(LendoverifyService::class)->verifyReference($reference);
             $data = $result['data'] ?? $result;
 
             $paymentStatus = strtolower(trim($data['paymentStatus'] ?? $data['status'] ?? ''));
@@ -243,16 +237,16 @@ class WalletController extends Controller
             }
 
             // Add funds to wallet
-            $this->walletService->addFunds($user, $amount, $reference);
+            app(WalletService::class)->addFunds($user, $amount, $reference);
 
-            $this->telegramService->sendTransactionNotification(
+            app(TelegramNotificationService::class)->sendTransactionNotification(
                 $user,
                 $amount,
                 'credit',
                 "Wallet funding successful - {$reference}"
             );
 
-            $newBalance = $this->walletService->getBalance($user);
+            $newBalance = app(WalletService::class)->getBalance($user);
 
             return response()->json([
                 'message' => 'Wallet funded successfully.',
@@ -294,7 +288,7 @@ class WalletController extends Controller
             $period = $request->query('period'); // today, week, month, all
             $perPage = (int) $request->query('per_page', 20);
 
-            $transactions = $this->walletService->getTransactions($user, $type, $period, $perPage);
+            $transactions = app(WalletService::class)->getTransactions($user, $type, $period, $perPage);
 
             return response()->json([
                 'data' => $transactions->map(fn ($t) => [

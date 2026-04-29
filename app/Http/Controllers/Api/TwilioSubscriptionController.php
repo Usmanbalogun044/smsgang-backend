@@ -18,13 +18,6 @@ use Throwable;
 
 class TwilioSubscriptionController extends Controller
 {
-    public function __construct(
-        private TwilioPhoneNumberService $twilioService,
-        private PricingService $pricingService,
-        private WalletService $walletService,
-        private TelegramNotificationService $telegramService,
-    ) {}
-
     public function inventory(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -41,7 +34,7 @@ class TwilioSubscriptionController extends Controller
         $cacheKey = sprintf('twilio:inventory:list:%s:%s:%d', $country, $contains, $limit);
 
         $items = Cache::remember($cacheKey, $ttl, function () use ($country, $contains, $limit, $ttl) {
-            $raw = $this->twilioService->listAvailableLocalNumbers($country, [
+            $raw = app(TwilioPhoneNumberService::class)->listAvailableLocalNumbers($country, [
                 'contains' => $contains !== '' ? $contains : null,
                 'limit' => $limit,
                 'sms_enabled' => true,
@@ -61,7 +54,7 @@ class TwilioSubscriptionController extends Controller
                     $providerPriceUsd = $defaultProviderUsd;
                 }
 
-                $breakdown = $this->pricingService->calculateTwilioMonthlyBreakdown($providerPriceUsd);
+                $breakdown = app(PricingService::class)->calculateTwilioMonthlyBreakdown($providerPriceUsd);
                 $phone = (string) ($row['phone_number'] ?? '');
                 if ($phone === '') {
                     continue;

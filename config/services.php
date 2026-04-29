@@ -93,4 +93,8 @@ return [
         'timeout' => env('CURRENCY_API_TIMEOUT', 15),
     ],
 
+    'ipinfo' => [
+        'tokens' => explode(',', trim(env('IPINFO_TOKENS', env('IPINFO_TOKEN', '')))),
+    ],
+
 ];

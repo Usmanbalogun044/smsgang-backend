@@ -21,9 +21,6 @@ use Illuminate\Support\Facades\Log;
 
 class AdminActivationController extends Controller
 {
-    public function __construct(
-        private ActivationService $activationService,
-    ) {}
 
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -46,7 +43,7 @@ class AdminActivationController extends Controller
             return response()->json(['message' => 'Activation is already in terminal state.'], 422);
         }
 
-        $this->activationService->expireActivation($activation);
+        app(ActivationService::class)->expireActivation($activation);
 
         Log::channel('activity')->info('Admin force-expired activation', [
             'activation_id' => $activation->id,

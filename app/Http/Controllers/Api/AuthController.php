@@ -11,6 +11,7 @@ use App\Http\Resources\UserResource;
 use App\Mail\EmailVerificationOtpMail;
 use App\Models\User;
 use App\Models\UserLoginActivity;
+use App\Services\LocationService;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\JsonResponse;
@@ -31,14 +32,29 @@ class AuthController extends Controller
 
     private function recordLoginActivity(?User $user, Request $request, string $eventType, array $context = []): void
     {
+        $ip = $request->ip();
+        $ipinfoService = app(IpinfoService::class);
+        $locationData = $ipinfoService->getLocationByIp($ip);
+
         UserLoginActivity::create([
             'user_id' => $user?->id,
             'email' => $user?->email ?? (string) $request->input('email', ''),
             'event_type' => $eventType,
-            'ip_address' => $request->ip(),
+            'ip_address' => $ip,
             'user_agent' => (string) $request->userAgent(),
-            'context' => $context ?: null,
+            'context' => array_merge($context ?: [], [
+                'location' => $locationData,
+            ]),
         ]);
+
+        // Also update user's last login IP and location if this is a successful login
+        if ($user && $eventType === 'login_success') {
+            $user->update([
+                'last_login_ip' => $ip,
+                'last_login_location' => $locationData,
+                'last_login_at' => now(),
+            ]);
+        }
     }
 
     private function otpCacheKey(string $email): string
@@ -163,17 +179,28 @@ class AuthController extends Controller
                 return response()->json(['message' => 'Signup session expired. Please register again.'], 422);
             }
 
+            // Get IP and location for registration
+            $ip = $request->ip();
+            $ipinfoService = app(IpinfoService::class);
+            $locationData = $ipinfoService->getLocationByIp($ip);
+
             $user = User::create([
                 'name' => (string) ($pendingSignup['name'] ?? ''),
                 'email' => $normalizedEmail,
                 'password' => (string) ($pendingSignup['password'] ?? ''),
+                'registration_ip' => $ip,
+                'registration_location' => $locationData,
+                'last_login_ip' => $ip,
+                'last_login_location' => $locationData,
+                'last_login_at' => now(),
+                'email_verified_at' => now(),
             ]);
-
-            $user->forceFill(['email_verified_at' => now()])->save();
 
             Log::channel('activity')->info('User registered after OTP verification', [
                 'user_id' => $user->id,
                 'email' => $user->email,
+                'registration_ip' => $ip,
+                'registration_location' => $ipinfoService->formatLocation($locationData),
             ]);
         }
 
@@ -267,9 +294,7 @@ class AuthController extends Controller
 
         $user->forceFill([
             'is_online' => true,
-            'last_login_ip' => $request->ip(),
             'last_user_agent' => (string) $request->userAgent(),
-            'last_login_at' => now(),
             'last_seen_at' => now(),
         ])->save();
 
@@ -342,15 +367,33 @@ class AuthController extends Controller
         $isNewUser = false;
 
         if (! $user) {
+            // Get IP and location for registration
+            $ip = $request->ip();
+            $ipinfoService = app(IpinfoService::class);
+            $locationData = $ipinfoService->getLocationByIp($ip);
+
             $user = User::create([
                 'name' => (string) ($payload['name'] ?? $payload['given_name'] ?? explode('@', $verifiedEmail)[0]),
                 'email' => $verifiedEmail,
                 'password' => Str::random(40),
                 'google_id' => $googleId,
                 'google_avatar_url' => $payload['picture'] ?? null,
+                'registration_ip' => $ip,
+                'registration_location' => $locationData,
+                'last_login_ip' => $ip,
+                'last_login_location' => $locationData,
+                'last_login_at' => now(),
+                'email_verified_at' => now(),
             ]);
-            $user->forceFill(['email_verified_at' => now()])->save();
             $isNewUser = true;
+
+            Log::channel('activity')->info('New user registered via Google Sign-in', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'google_id' => $googleId,
+                'registration_ip' => $ip,
+                'registration_location' => $ipinfoService->formatLocation($locationData),
+            ]);
         } else {
             $updateData = [];
 
@@ -377,9 +420,7 @@ class AuthController extends Controller
 
         $user->forceFill([
             'is_online' => true,
-            'last_login_ip' => $request->ip(),
             'last_user_agent' => (string) $request->userAgent(),
-            'last_login_at' => now(),
             'last_seen_at' => now(),
         ])->save();
 

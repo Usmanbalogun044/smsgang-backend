@@ -18,12 +18,6 @@ use Throwable;
 
 class SmmOrderController extends Controller
 {
-    public function __construct(
-        private CrestPanelService $crestPanelService,
-        private SmmPricingService $smmPricingService,
-        private WalletService $walletService,
-        private TelegramNotificationService $telegramService,
-    ) {}
 
    
    
@@ -71,11 +65,11 @@ class SmmOrderController extends Controller
             }
 
             // Calculate price
-            $priceData = $this->smmPricingService->calculatePrice($service, $validated['quantity'], $user);
+            $priceData = app(SmmPricingService::class)->calculatePrice($service, $validated['quantity'], $user);
             $finalPriceNgn = $priceData['total_price'];
 
             // Check wallet balance
-            $wallet = $this->walletService->getOrCreateWallet($user);
+            $wallet = app(WalletService::class)->getOrCreateWallet($user);
             if ($wallet->balance < $finalPriceNgn) {
                 return response()->json([
                     'message' => 'Insufficient wallet balance.',
@@ -114,7 +108,7 @@ class SmmOrderController extends Controller
             ]);
 
             // STEP 2: Deduct from wallet (lock funds locally)
-            $debitTx = $this->walletService->deductFunds(
+            $debitTx = app(WalletService::class)->deductFunds(
                 $user,
                 $priceData['total_price'],
                 "SMM_ORDER_{$order->id}",
@@ -138,7 +132,7 @@ class SmmOrderController extends Controller
                 $debitTx->update(['smm_order_id' => $order->id]);
             }
 
-            $this->telegramService->sendTransactionNotification(
+            app(TelegramNotificationService::class)->sendTransactionNotification(
                 $user,
                 (float) $priceData['total_price'],
                 'debit',
@@ -146,7 +140,7 @@ class SmmOrderController extends Controller
             );
 
             // STEP 3: Call CrestPanel (now we have a local record + deduction)
-            $cpOrder = $this->crestPanelService->createOrder([
+            $cpOrder = app(CrestPanelService::class)->createOrder([
                 'service_id' => $service->crestpanel_service_id,
                 'link' => $validated['link'],
                 'quantity' => $validated['quantity'],
@@ -167,7 +161,7 @@ class SmmOrderController extends Controller
                 ]);
 
                 // STEP 4A: REFUND THE USER IMMEDIATELY
-                $refundTx = $this->walletService->refundFunds(
+                $refundTx = app(WalletService::class)->refundFunds(
                     $user,
                     $finalPriceNgn,
                     "SMM_REFUND_ORDER_{$order->id}",
@@ -178,7 +172,7 @@ class SmmOrderController extends Controller
                     $refundTx->update(['smm_order_id' => $order->id]);
                 }
 
-                $this->telegramService->sendTransactionNotification(
+                app(TelegramNotificationService::class)->sendTransactionNotification(
                     $user,
                     (float) $finalPriceNgn,
                     'credit',
@@ -219,12 +213,12 @@ class SmmOrderController extends Controller
             ]);
 
             // Send Telegram notification about the new order
-            $this->telegramService->sendSmmOrderNotification($order, $user, $service);
+            app(TelegramNotificationService::class)->sendSmmOrderNotification($order, $user, $service);
 
             return response()->json([
                 'message' => 'Order created and sent to provider successfully.',
                 'order' => $this->formatOrderForUser($order->fresh('service')),
-                'remaining_balance' => $this->walletService->getBalance($user),
+                'remaining_balance' => app(WalletService::class)->getBalance($user),
             ], 201);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
@@ -270,7 +264,7 @@ class SmmOrderController extends Controller
                     // Fetch fresh status for pending orders to match detail view
                     $statusData = null;
                     if ($order->crestpanel_order_id && in_array($order->status->value, SmmOrderStatus::providerTracked(), true)) {
-                        $statusData = $this->crestPanelService->getOrderStatus($order->crestpanel_order_id);
+                        $statusData = app(CrestPanelService::class)->getOrderStatus($order->crestpanel_order_id);
                     }
                     return $this->formatOrderForUser($order, is_array($statusData) ? $statusData : null);
                 }),
@@ -306,7 +300,7 @@ class SmmOrderController extends Controller
 
             $statusData = null;
             if ($order->crestpanel_order_id) {
-                $statusData = $this->crestPanelService->getOrderStatus($order->crestpanel_order_id);
+                $statusData = app(CrestPanelService::class)->getOrderStatus($order->crestpanel_order_id);
             }
 
             return response()->json($this->formatOrderForUser($order, is_array($statusData) ? $statusData : null));

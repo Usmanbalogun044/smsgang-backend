@@ -10,9 +10,6 @@ use Illuminate\Http\Request;
 
 class DeveloperApiKeyController extends Controller
 {
-    public function __construct(
-        private DeveloperApiKeyService $developerApiKeyService,
-    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -33,7 +30,7 @@ class DeveloperApiKeyController extends Controller
             'name' => 'required|string|max:120',
         ]);
 
-        $result = $this->developerApiKeyService->create(
+        $result = app(DeveloperApiKeyService::class)->create(
             $request->user(),
             $validated['name'],
             ['*'],

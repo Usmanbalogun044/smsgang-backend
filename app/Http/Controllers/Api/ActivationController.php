@@ -22,11 +22,6 @@ use Throwable;
 
 class ActivationController extends Controller
 {
-    public function __construct(
-        private ActivationService $activationService,
-        private TelegramNotificationService $telegramService,
-        private WalletService $walletService,
-    ) {}
 
     public function buy(BuyActivationRequest $request): JsonResponse
     {
@@ -52,7 +47,7 @@ class ActivationController extends Controller
             $country = Country::findOrFail($request->country_id);
 
             // Create order first so we always use the exact calculated operator price.
-            $order = $this->activationService->initiatePurchase(
+            $order = app(ActivationService::class)->initiatePurchase(
                 $user,
                 $service,
                 $country,
@@ -86,7 +81,7 @@ class ActivationController extends Controller
                 ], 422);
             }
 
-            $debitTx = $this->walletService->deductFunds(
+            $debitTx = app(WalletService::class)->deductFunds(
                 $user,
                 $price,
                 "SMS_ORDER_{$order->id}",
@@ -109,10 +104,10 @@ class ActivationController extends Controller
             }
 
             try {
-                $this->activationService->processAfterPayment($order);
+                app(ActivationService::class)->processAfterPayment($order);
             } catch (Throwable $provisionError) {
                 // Refund user instantly if provisioning fails after wallet debit.
-                $this->walletService->refundFunds(
+                app(WalletService::class)->refundFunds(
                     $user,
                     $price,
                     "SMS_REFUND_ORDER_{$order->id}",
@@ -132,7 +127,7 @@ class ActivationController extends Controller
                 ], 503);
             }
 
-            $remainingBalance = $this->walletService->getBalance($user);
+            $remainingBalance = app(WalletService::class)->getBalance($user);
 
             Log::channel('activity')->info('SMS activation purchased via wallet', [
                 'user_id' => $user->id,
@@ -143,7 +138,7 @@ class ActivationController extends Controller
                 'remaining_balance' => $remainingBalance,
             ]);
 
-            $this->telegramService->sendTransactionNotification(
+            app(TelegramNotificationService::class)->sendTransactionNotification(
                 $user,
                 $price,
                 'debit',
@@ -199,7 +194,7 @@ class ActivationController extends Controller
             ]);
         }
 
-        $smsCode = $this->activationService->checkForSms($activation);
+        $smsCode = app(ActivationService::class)->checkForSms($activation);
 
         return response()->json([
             'activation' => new ActivationResource($activation->fresh()->load(['service', 'country', 'order'])),
@@ -211,7 +206,7 @@ class ActivationController extends Controller
     {
         $this->authorize('cancel', $activation);
 
-        $this->activationService->cancelActivation($activation);
+        app(ActivationService::class)->cancelActivation($activation);
 
         Log::channel('activity')->info('Activation cancelled by user', [
             'activation_id' => $activation->id,
