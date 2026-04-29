@@ -32,9 +32,8 @@ class AuthController extends Controller
 
     private function recordLoginActivity(?User $user, Request $request, string $eventType, array $context = []): void
     {
-        $ip = $request->ip();
-        $ipinfoService = app(IpinfoService::class);
-        $locationData = $ipinfoService->getLocationByIp($ip);
+        $locationData = app(LocationService::class)->getLocationFromRequest($request);
+        $ip = $locationData['client_ip'] ?? $request->ip();
 
         UserLoginActivity::create([
             'user_id' => $user?->id,
@@ -121,7 +120,7 @@ class AuthController extends Controller
         $normalizedEmail = strtolower(trim((string) $validated['email']));
 
         /** @var User|null $existing */
-        $existing = User::whereRaw('LOWER(email) = ?', [$normalizedEmail])->first();
+        $existing = User::query()->whereRaw('LOWER(email) = ?', [$normalizedEmail], 'and')->first();
 
         if ($existing) {
             return response()->json([
@@ -158,7 +157,7 @@ class AuthController extends Controller
         }
 
         /** @var User|null $user */
-        $user = User::whereRaw('LOWER(email) = ?', [$normalizedEmail])->first();
+        $user = User::query()->whereRaw('LOWER(email) = ?', [$normalizedEmail], 'and')->first();
 
         if ($user) {
             if ($user->email_verified_at) {
@@ -180,9 +179,8 @@ class AuthController extends Controller
             }
 
             // Get IP and location for registration
-            $ip = $request->ip();
-            $ipinfoService = app(IpinfoService::class);
-            $locationData = $ipinfoService->getLocationByIp($ip);
+            $locationData = app(LocationService::class)->getLocationFromRequest($request);
+            $ip = $locationData['client_ip'] ?? $request->ip();
 
             $user = User::create([
                 'name' => (string) ($pendingSignup['name'] ?? ''),
@@ -200,7 +198,9 @@ class AuthController extends Controller
                 'user_id' => $user->id,
                 'email' => $user->email,
                 'registration_ip' => $ip,
-                'registration_location' => $ipinfoService->formatLocation($locationData),
+                'registration_country' => $locationData['country'] ?? null,
+                'registration_region' => $locationData['region'] ?? null,
+                'registration_city' => $locationData['city'] ?? null,
             ]);
         }
 
@@ -225,7 +225,7 @@ class AuthController extends Controller
         $normalizedEmail = strtolower(trim($validated['email']));
 
         /** @var User|null $user */
-        $user = User::whereRaw('LOWER(email) = ?', [$normalizedEmail])->first();
+        $user = User::query()->whereRaw('LOWER(email) = ?', [$normalizedEmail], 'and')->first();
 
         if ($user) {
             if ($user->email_verified_at) {
@@ -253,7 +253,7 @@ class AuthController extends Controller
 
     public function login(LoginRequest $request): JsonResponse
     {
-        $user = User::where('email', $request->email)->first();
+        $user = User::query()->where('email', '=', $request->email)->first();
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
             $this->recordLoginActivity(null, $request, 'failed_login', [
@@ -355,7 +355,7 @@ class AuthController extends Controller
         /** @var User|null $user */
         $user = User::query()
             ->where('google_id', $googleId)
-            ->orWhereRaw('LOWER(email) = ?', [$verifiedEmail])
+            ->orWhereRaw('LOWER(email) = ?', [$verifiedEmail], 'and')
             ->first();
 
         if ($user && ! $user->isActive()) {
@@ -368,9 +368,8 @@ class AuthController extends Controller
 
         if (! $user) {
             // Get IP and location for registration
-            $ip = $request->ip();
-            $ipinfoService = app(IpinfoService::class);
-            $locationData = $ipinfoService->getLocationByIp($ip);
+            $locationData = app(LocationService::class)->getLocationFromRequest($request);
+            $ip = $locationData['client_ip'] ?? $request->ip();
 
             $user = User::create([
                 'name' => (string) ($payload['name'] ?? $payload['given_name'] ?? explode('@', $verifiedEmail)[0]),
@@ -392,7 +391,9 @@ class AuthController extends Controller
                 'email' => $user->email,
                 'google_id' => $googleId,
                 'registration_ip' => $ip,
-                'registration_location' => $ipinfoService->formatLocation($locationData),
+                'registration_country' => $locationData['country'] ?? null,
+                'registration_region' => $locationData['region'] ?? null,
+                'registration_city' => $locationData['city'] ?? null,
             ]);
         } else {
             $updateData = [];
@@ -520,7 +521,7 @@ class AuthController extends Controller
         ]);
 
         /** @var User|null $user */
-        $user = User::whereRaw('LOWER(email) = ?', [strtolower(trim($validated['email']))])->first();
+        $user = User::query()->whereRaw('LOWER(email) = ?', [strtolower(trim($validated['email']))], 'and')->first();
 
         if ($user) {
             $this->sendPasswordResetOtp($user->email);
@@ -543,7 +544,7 @@ class AuthController extends Controller
         $normalizedEmail = strtolower(trim($validated['email']));
 
         /** @var User|null $user */
-        $user = User::whereRaw('LOWER(email) = ?', [$normalizedEmail])->first();
+        $user = User::query()->whereRaw('LOWER(email) = ?', [$normalizedEmail], 'and')->first();
         if (! $user) {
             return response()->json(['message' => 'Invalid or expired reset code.'], 422);
         }

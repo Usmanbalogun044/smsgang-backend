@@ -8,15 +8,8 @@ use Illuminate\Support\Facades\Log;
 
 class LocationService
 {
-    /**
-     * Resolve IP location info for the current request via IPinfo Lite.
-     *
-     * Returns an array with keys: country, region, city, loc, client_ip,
-     * plus optional lite metadata (country_code, continent_code, asn, etc).
-     *
-     * Note: IPinfo Lite does not provide region/city/loc, so those are null.
-     * Returns null silently on any failure — never throws.
-     */
+    // Resolve IP location info for the current request via IPinfo Lite.
+    // Returns null silently on any failure.
     public function getLocationFromRequest(Request $request): ?array
     {
         try {

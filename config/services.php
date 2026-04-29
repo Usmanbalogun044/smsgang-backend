@@ -94,7 +94,7 @@ return [
     ],
 
     'ipinfo' => [
-        'tokens' => explode(',', trim(env('IPINFO_TOKENS', env('IPINFO_TOKEN', '')))),
+        'tokens' => array_values(array_filter(array_map('trim', explode(',', (string) env('IPINFO_TOKENS', env('IPINFO_TOKEN', '')))))),
     ],
 
 ];
