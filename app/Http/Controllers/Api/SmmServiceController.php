@@ -109,7 +109,7 @@ class SmmServiceController extends Controller
 
             return response()->json([
                 'data' => $services->getCollection()->map(function ($service) use ($authUser) {
-                    $priceData = $this->smmPricingService->calculatePrice($service, 1, $authUser);
+                    $priceData = app(SmmPricingService::class)->calculatePrice($service, 1, $authUser);
                     $intelligence = $this->buildServiceIntelligence($service);
 
                     return [
@@ -158,7 +158,7 @@ class SmmServiceController extends Controller
                 ], 404);
             }
 
-            $priceData = $this->smmPricingService->calculatePrice($service, 1, request()->user());
+            $priceData = app(SmmPricingService::class)->calculatePrice($service, 1, request()->user());
             $intelligence = $this->buildServiceIntelligence($service);
 
             return response()->json([
