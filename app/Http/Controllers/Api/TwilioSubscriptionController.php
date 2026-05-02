@@ -138,17 +138,17 @@ class TwilioSubscriptionController extends Controller
 
         try {
             // Reserve in Twilio first.
-            $incomingNumber = $this->twilioService->purchaseIncomingNumber($phoneNumber);
+            $incomingNumber = app(TwilioPhoneNumberService::class)->purchaseIncomingNumber($phoneNumber);
 
             $twilioNumberSid = (string) ($incomingNumber['sid'] ?? '');
             if ($twilioNumberSid === '') {
                 throw new \RuntimeException('Twilio reservation response is missing SID.');
             }
 
-            $pricing = $this->pricingService->calculateTwilioMonthlyBreakdown($providerMonthlyPriceUsd);
+            $pricing = app(PricingService::class)->calculateTwilioMonthlyBreakdown($providerMonthlyPriceUsd);
             $sellPriceNgn = (float) $pricing['final_price_ngn'];
 
-            $debitTx = $this->walletService->deductFunds(
+            $debitTx = app(WalletService::class)->deductFunds(
                 $user,
                 $sellPriceNgn,
                 $debitReference,
@@ -156,7 +156,7 @@ class TwilioSubscriptionController extends Controller
             );
 
             if (! $debitTx) {
-                $this->twilioService->releaseIncomingNumber($twilioNumberSid);
+                app(TwilioPhoneNumberService::class)->releaseIncomingNumber($twilioNumberSid);
 
                 return response()->json([
                     'message' => 'Insufficient wallet balance.',
@@ -190,19 +190,19 @@ class TwilioSubscriptionController extends Controller
                     'provider_payload' => $incomingNumber,
                 ]);
             } catch (Throwable $persistError) {
-                $this->walletService->refundFunds(
+                app(WalletService::class)->refundFunds(
                     $user,
                     $sellPriceNgn,
                     'TWILIO_REFUND_' . $debitReference,
                     'Refund for failed Twilio subscription setup'
                 );
 
-                $this->twilioService->releaseIncomingNumber($twilioNumberSid);
+                app(TwilioPhoneNumberService::class)->releaseIncomingNumber($twilioNumberSid);
 
                 throw $persistError;
             }
 
-            $this->telegramService->sendTransactionNotification(
+            app(TelegramNotificationService::class)->sendTransactionNotification(
                 $user,
                 $sellPriceNgn,
                 'debit',
@@ -212,7 +212,7 @@ class TwilioSubscriptionController extends Controller
             return response()->json([
                 'message' => 'Monthly private number activated successfully.',
                 'subscription' => $this->serializeSubscription($subscription),
-                'remaining_balance' => $this->walletService->getBalance($user),
+                'remaining_balance' => app(WalletService::class)->getBalance($user),
             ], 201);
         } catch (Throwable $e) {
             Log::channel('activity')->error('Twilio monthly purchase failed', [
@@ -293,7 +293,7 @@ class TwilioSubscriptionController extends Controller
             ], 422);
         }
 
-        $result = $this->twilioService->sendSms(
+        $result = app(TwilioPhoneNumberService::class)->sendSms(
             $subscription->phone_number_e164,
             (string) $validated['to'],
             (string) $validated['body'],

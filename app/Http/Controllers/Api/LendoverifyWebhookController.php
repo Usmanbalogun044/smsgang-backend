@@ -17,10 +17,6 @@ class LendoverifyWebhookController extends Controller
 {
     private ?bool $transactionOperationTypeColumnExists = null;
 
-    public function __construct(
-        private WalletService $walletService,
-    ) {}
-
     private function hasTransactionOperationTypeColumn(): bool
     {
         if ($this->transactionOperationTypeColumnExists === null) {
@@ -196,7 +192,7 @@ class LendoverifyWebhookController extends Controller
                 // Add funds to wallet
                 $user = User::find($transaction->user_id);
                 if ($user) {
-                    $this->walletService->addFunds($user, $amount, $transaction->reference);
+                    app(WalletService::class)->addFunds($user, $amount, $transaction->reference);
 
                     $transaction->update([
                         'gateway_response' => $data,
@@ -208,7 +204,7 @@ class LendoverifyWebhookController extends Controller
                         'transaction_id' => $transaction->id,
                         'user_id' => $user->id,
                         'amount' => $amount,
-                        'final_balance' => $this->walletService->getBalance($user),
+                        'final_balance' => app(WalletService::class)->getBalance($user),
                     ]);
                 } else {
                     Log::error('Wallet funding webhook: user not found', [

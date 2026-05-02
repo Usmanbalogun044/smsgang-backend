@@ -55,10 +55,10 @@ class DeveloperApiKeyController extends Controller
             'name' => 'nullable|string|max:120',
         ]);
 
-        $active = $this->developerApiKeyService->getActiveForUser($request->user());
+        $active = app(DeveloperApiKeyService::class)->getActiveForUser($request->user());
         $name = $validated['name'] ?? $active?->name ?? 'Primary API Key';
 
-        $result = $this->developerApiKeyService->create(
+        $result = app(DeveloperApiKeyService::class)->create(
             $request->user(),
             $name,
             ['*'],
@@ -85,7 +85,7 @@ class DeveloperApiKeyController extends Controller
             ], 403);
         }
 
-        $this->developerApiKeyService->revoke($developerApiKey);
+        app(DeveloperApiKeyService::class)->revoke($developerApiKey);
 
         return response()->json([
             'message' => 'API key revoked.',

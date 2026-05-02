@@ -98,9 +98,9 @@ class WhatsappNotificationController extends Controller
         }
 
         try {
-            $balanceBefore = (float) $this->walletService->getBalance($user);
+            $balanceBefore = (float) app(WalletService::class)->getBalance($user);
 
-            $debit = $this->walletService->deductFunds(
+            $debit = app(WalletService::class)->deductFunds(
                 $user,
                 $unitPrice,
                 $billingReference,
@@ -116,13 +116,13 @@ class WhatsappNotificationController extends Controller
             }
 
             try {
-                $providerResponse = $this->twilioWhatsappService->sendTemplate(
+                $providerResponse = app(TwilioWhatsappService::class)->sendTemplate(
                     $normalizedTo,
                     (string) $template->content_sid,
                     $variables,
                 );
             } catch (Throwable $e) {
-                $this->walletService->refundFunds(
+                app(WalletService::class)->refundFunds(
                     $user,
                     $unitPrice,
                     'WHATSAPP_REFUND_' . $billingReference,
@@ -172,7 +172,7 @@ class WhatsappNotificationController extends Controller
                 'sent_at' => now(),
             ]);
 
-            $balanceAfter = (float) $this->walletService->getBalance($user);
+            $balanceAfter = (float) app(WalletService::class)->getBalance($user);
 
             return response()->json([
                 'message' => 'WhatsApp notification queued successfully.',

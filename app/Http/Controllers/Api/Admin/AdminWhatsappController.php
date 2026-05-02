@@ -56,7 +56,7 @@ class AdminWhatsappController extends Controller
 
     public function syncTemplates(): JsonResponse
     {
-        $remoteTemplates = $this->templateService->listTemplates();
+        $remoteTemplates = app(TwilioWhatsappTemplateService::class)->listTemplates();
         $synced = [];
 
         foreach ($remoteTemplates as $remoteTemplate) {
